@@ -82,7 +82,13 @@ export default function CallPage() {
   const [activeTab, setActiveTab] = useState(0);
   const [personaTalking, setPersonaTalking] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [draftReply, setDraftReply] = useState("");
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const mode = store.mode || "video";
+  const isVideoMode = mode === "video";
+  const isVoiceMode = mode === "voice";
+  const isPhoneMode = mode === "phone";
+  const isTextMode = mode === "text";
   const persona = store.persona || {
     id: "persona-margaret-001",
     name: "Margaret Lewis",
@@ -154,6 +160,10 @@ export default function CallPage() {
 
   const latestLine = visibleTranscript[visibleTranscript.length - 1];
   const progress = Math.min(elapsed / 300, 1);
+  const primaryModeLabel = isPhoneMode ? "PHONE" : isTextMode ? "CHAT" : isVoiceMode ? "VOICE" : "VIDEO";
+  const criticalResponse = persona.hidden_red_flag
+    ? `I heard ${persona.hidden_red_flag.split("—")[0].trim().toLowerCase()}. I need to shift us into a safer next step before we continue.`
+    : "I need to pause and make sure we handle that safely before we continue.";
 
   const handlePlayLatestLine = useCallback(async () => {
     if (!latestLine) return;
@@ -193,7 +203,7 @@ export default function CallPage() {
           <Logo size={20} />
           <div style={{ width: 1, height: 18, background: "var(--line)" }} />
           <div className="rc-pill teal">
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", display: "inline-block", animation: "rc-pulse 1.4s infinite" }} />LIVE
+            <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", display: "inline-block", animation: "rc-pulse 1.4s infinite" }} />{primaryModeLabel}
           </div>
           <div style={{ fontSize: 13, fontWeight: 500 }}>{persona.role} · {persona.name}</div>
           <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{store.industry || "Healthcare"} · {store.difficulty || "Medium"}</div>
@@ -218,11 +228,93 @@ export default function CallPage() {
         <div style={{ position: "relative", display: "flex", flexDirection: "column" }}>
           <div style={{ position: "relative", flex: 1, padding: "22px 22px 0" }}>
             <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 18, overflow: "hidden", background: "linear-gradient(160deg, #1A2540 0%, #0A1226 60%, #0E1A2C 100%)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.6)" }}>
-              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-                <div style={{ transform: "scale(2.6)" }}>
-                  <PersonaAvatar persona={persona.avatar_preset as any} size={200} mood={persona.mood as any} talking={personaTalking} />
+              {isVideoMode && (
+                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                  <div style={{ transform: "scale(2.6)" }}>
+                    <PersonaAvatar persona={persona.avatar_preset as any} size={200} mood={persona.mood as any} talking={personaTalking} />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {isVoiceMode && (
+                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                  <div style={{ width: 420, textAlign: "center" }}>
+                    <div style={{ fontSize: 12, letterSpacing: "0.14em", color: "var(--ink-3)", marginBottom: 16 }}>AUDIO CHANNEL</div>
+                    <div style={{ fontSize: 56, fontWeight: 700, letterSpacing: "-0.05em", marginBottom: 8 }}>{persona.name}</div>
+                    <div style={{ fontSize: 15, color: "var(--ink-2)", marginBottom: 24 }}>{persona.role} · spoken coaching mode</div>
+                    <Waveform tone="teal" bars={32} height={38} dense />
+                    <div style={{ marginTop: 18, display: "flex", justifyContent: "center", gap: 8 }}>
+                      <div className="rc-pill teal"><Icons.mic size={10} />Voice active</div>
+                      <div className="rc-pill"><Icons.chat size={10} />Transcript live</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isPhoneMode && (
+                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                  <div style={{ width: 290, borderRadius: 32, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(8,10,17,0.75)", padding: "28px 24px", boxShadow: "0 32px 70px -18px rgba(0,0,0,0.7)" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 16 }} className="rc-mono">LIVE PHONE CALL</div>
+                      <div style={{ width: 96, height: 96, borderRadius: 99, margin: "0 auto 18px", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.28)", display: "grid", placeItems: "center" }}>
+                        <Icons.phone size={28} />
+                      </div>
+                      <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{persona.name}</div>
+                      <div style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: 20 }}>{persona.role}</div>
+                      <Waveform tone="teal" bars={22} height={24} dense />
+                      <div style={{ marginTop: 20, display: "grid", gap: 8, fontSize: 12, color: "var(--ink-2)" }}>
+                        <div>No visual cues</div>
+                        <div>Listen for detail changes</div>
+                        <div>Use verbal reassurance and structure</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isTextMode && (
+                <div style={{ position: "absolute", inset: 18, borderRadius: 18, border: "1px solid var(--line)", background: "rgba(8,10,17,0.78)", padding: 18, display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div className="rc-pill"><Icons.chat size={10} />Live chat thread</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{persona.name} is typing in bursts</div>
+                  </div>
+                  <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 6 }}>
+                    {visibleTranscript.map((line, index) => (
+                      <div
+                        key={`${line.timestamp}-${index}`}
+                        style={{
+                          alignSelf: line.speaker === "patient" ? "flex-start" : "flex-end",
+                          maxWidth: "72%",
+                          background: line.speaker === "patient" ? "rgba(255,255,255,0.05)" : "rgba(45,212,191,0.12)",
+                          border: `1px solid ${line.speaker === "patient" ? "var(--line)" : "rgba(45,212,191,0.22)"}`,
+                          borderRadius: 16,
+                          padding: "10px 12px",
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {line.text}
+                      </div>
+                    ))}
+                    {!visibleTranscript.length && (
+                      <div style={{ alignSelf: "flex-start", maxWidth: "72%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--line)", borderRadius: 16, padding: "10px 12px", fontSize: 13, lineHeight: 1.5 }}>
+                        Waiting for the first chat message…
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 14 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                      <textarea
+                        value={draftReply}
+                        onChange={(e) => setDraftReply(e.target.value)}
+                        placeholder="Type your next message with clear structure and calm tone..."
+                        style={{ flex: 1, minHeight: 84, resize: "none", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: 14, color: "var(--ink-0)", padding: "12px 14px", fontSize: 13, outline: "none" }}
+                      />
+                      <button className="rc-btn primary"><Icons.chat size={14} /> Send</button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Persona info */}
               <div style={{ position: "absolute", top: 16, left: 16, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -233,7 +325,7 @@ export default function CallPage() {
                 <div style={{ display: "flex", gap: 6 }}>
                   <div className="rc-pill warn"><span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />{persona.mood}</div>
                   <div className="rc-pill">{persona.traits[0] || "Conversational"}</div>
-                  {latestLine && (
+                  {latestLine && !isTextMode && (
                     <button className="rc-pill" style={{ border: "none", cursor: "pointer" }} onClick={handlePlayLatestLine}>
                       {isPlayingVoice ? <Icons.pause size={10} /> : <Icons.play size={10} />} Hear line
                     </button>
@@ -242,7 +334,7 @@ export default function CallPage() {
               </div>
 
               {/* Speaking indicator */}
-              {personaTalking && (
+              {personaTalking && !isPhoneMode && !isTextMode && (
                 <div style={{ position: "absolute", bottom: 16, left: 16, display: "inline-flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(0,0,0,0.55)", border: "1px solid var(--line-2)", borderRadius: 12, backdropFilter: "blur(20px)" }}>
                   <span style={{ width: 8, height: 8, borderRadius: 99, background: "#2DD4BF", animation: "rc-pulse 1s infinite" }} />
                   <span style={{ fontSize: 12, color: "#5EEAD4", fontWeight: 500 }}>Speaking</span>
@@ -251,7 +343,7 @@ export default function CallPage() {
               )}
 
               {/* Caption */}
-              {latestLine && (
+              {latestLine && !isTextMode && (
                 <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", maxWidth: "70%", padding: "12px 18px", background: "rgba(0,0,0,0.65)", borderRadius: 14, border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", fontSize: 14.5, lineHeight: 1.5, fontStyle: "italic", textAlign: "center" }}>
                   {latestLine.is_critical ? <span style={{ color: "#FCA5A5" }}>"{latestLine.text}"</span> : `"${latestLine.text}"`}
                 </div>
@@ -264,12 +356,12 @@ export default function CallPage() {
                     <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(248,113,113,0.25)", display: "grid", placeItems: "center", color: "#FCA5A5" }}><Icons.warn size={12} /></div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "#FCA5A5", letterSpacing: "0.02em" }}>CRITICAL MOMENT DETECTED</div>
                   </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-0)" }}>Patient revealed a potential red flag. Consider acknowledging and escalating before continuing.</div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-0)" }}>The scenario surfaced a possible risk cue. Acknowledge it directly and shift the conversation toward the safest next step.</div>
                 </div>
               )}
 
               {/* User PIP */}
-              <div style={{ position: "absolute", bottom: 14, right: 14, width: 200, height: 140, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-2)", background: "linear-gradient(160deg, #1A2540 0%, #0E1A2C 100%)", boxShadow: "0 12px 30px -8px rgba(0,0,0,0.5)" }}>
+              {isVideoMode && <div style={{ position: "absolute", bottom: 14, right: 14, width: 200, height: 140, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-2)", background: "linear-gradient(160deg, #1A2540 0%, #0E1A2C 100%)", boxShadow: "0 12px 30px -8px rgba(0,0,0,0.5)" }}>
                 <video ref={videoRef} autoPlay muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
                 <svg viewBox="0 0 200 140" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", opacity: 0.55 }}>
                   <g stroke="rgba(45,212,191,0.6)" strokeWidth="0.8" fill="none"><ellipse cx="100" cy="68" rx="34" ry="42" /></g>
@@ -281,7 +373,7 @@ export default function CallPage() {
                   <span style={{ color: "#5EEAD4" }} className="rc-mono">EYE 62%</span>
                   <span style={{ color: "#FCD34D" }} className="rc-mono">PACE FAST</span>
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -289,15 +381,15 @@ export default function CallPage() {
           <div style={{ padding: "18px 22px 22px", display: "flex", justifyContent: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", borderRadius: 18, backdropFilter: "blur(20px)", boxShadow: "0 14px 40px -10px rgba(0,0,0,0.7)" }}>
               <CtrlBtn icon={<Icons.mic size={18} />} label="Mute" onClick={store.toggleMute} />
-              <CtrlBtn icon={<Icons.cam size={18} />} label="Camera" onClick={store.toggleCamera} />
+              {isVideoMode && <CtrlBtn icon={<Icons.cam size={18} />} label="Camera" onClick={store.toggleCamera} />}
               <CtrlBtn icon={<Icons.hint size={18} />} label="Hint" tone="violet" />
               <CtrlBtn icon={<Icons.bookmark size={18} />} label="Mark" />
-              <CtrlBtn icon={<Icons.pause size={18} />} label="Pause" />
+              <CtrlBtn icon={<Icons.pause size={18} />} label={isTextMode ? "Hold" : "Pause"} />
               <div style={{ width: 1, height: 32, background: "var(--line)" }} />
-              <CtrlBtn icon={<Icons.retry size={18} />} label="Reset" />
-              <CtrlBtn icon={<Icons.warn size={18} />} label="Emergency" tone="amber" />
+              <CtrlBtn icon={<Icons.retry size={18} />} label={isTextMode ? "Reword" : "Reset"} />
+              {!isTextMode && <CtrlBtn icon={<Icons.warn size={18} />} label="Emergency" tone="amber" />}
               <button className="rc-btn danger" style={{ padding: "10px 16px", borderRadius: 14, marginLeft: 6 }} onClick={handleEndCall}>
-                <Icons.phone size={16} /> End call
+                <Icons.phone size={16} /> {isTextMode ? "End chat" : "End call"}
               </button>
             </div>
           </div>
@@ -330,11 +422,11 @@ export default function CallPage() {
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: "#FCA5A5", letterSpacing: "0.05em" }}>SUGGESTED RESPONSE · NOW</div>
                 </div>
                 <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-0)", fontStyle: "italic" }}>
-                  "Because you mentioned chest tightness after surgery, I need to connect you with urgent clinical support right now."
+                  "{criticalResponse}"
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                   <button className="rc-btn sm" style={{ flex: 1, justifyContent: "center" }} onClick={() => setCriticalVisible(false)}>Dismiss</button>
-                  <button className="rc-btn sm primary" style={{ flex: 1, justifyContent: "center" }}>Use phrasing</button>
+                  <button className="rc-btn sm primary" style={{ flex: 1, justifyContent: "center" }}>{isTextMode ? "Copy reply" : "Use phrasing"}</button>
                 </div>
               </div>
             )}
@@ -360,17 +452,29 @@ export default function CallPage() {
 
             <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
               <div className="rc-label" style={{ marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-                <span>Nonverbal signals</span>
-                <span style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "none", letterSpacing: "normal" }}>coaching estimates</span>
+                <span>{isTextMode ? "Written coaching" : isPhoneMode ? "Audio signals" : isVoiceMode ? "Voice signals" : "Nonverbal signals"}</span>
+                <span style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "none", letterSpacing: "normal" }}>{isTextMode ? "language quality" : "coaching estimates"}</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <Signal label="Eye contact" v={62} tone="warn" />
-                <Signal label="Pace" v={78} tone="warn" raw="168 wpm" />
-                <Signal label="Engagement" v={84} tone="ok" />
-                <Signal label="Turn-taking" v={71} tone="violet" />
+                {isTextMode ? (
+                  <>
+                    <Signal label="Clarity" v={81} tone="ok" />
+                    <Signal label="Tone" v={68} tone="warn" raw="slightly tense" />
+                    <Signal label="Structure" v={76} tone="violet" />
+                    <Signal label="Brevity" v={72} tone="ok" />
+                  </>
+                ) : (
+                  <>
+                    {!isPhoneMode && <Signal label="Eye contact" v={62} tone="warn" />}
+                    <Signal label="Pace" v={78} tone="warn" raw="168 wpm" />
+                    {!isPhoneMode && <Signal label="Engagement" v={84} tone="ok" />}
+                    <Signal label="Turn-taking" v={71} tone="violet" />
+                    {isPhoneMode && <Signal label="Reassurance" v={73} tone="ok" />}
+                  </>
+                )}
               </div>
               <div style={{ display: "flex", gap: 14, fontSize: 10.5, color: "var(--ink-3)", marginTop: 10 }} className="rc-mono">
-                <span>3 interruptions</span><span>·</span><span>4 clarifiers</span><span>·</span><span>12 fillers</span>
+                {isTextMode ? <><span>2 rewrites</span><span>·</span><span>3 empathy phrases</span><span>·</span><span>1 escalation cue</span></> : <><span>3 interruptions</span><span>·</span><span>4 clarifiers</span><span>·</span><span>12 fillers</span></>}
               </div>
             </div>
           </div>
@@ -378,7 +482,7 @@ export default function CallPage() {
       </div>
 
       {/* Transcript dock */}
-      <div style={{ position: "absolute", bottom: 104, left: 22, width: 380, padding: "12px 14px", borderRadius: 14, background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", boxShadow: "0 12px 30px -10px rgba(0,0,0,0.6)" }}>
+      {!isTextMode && <div style={{ position: "absolute", bottom: 104, left: 22, width: 380, padding: "12px 14px", borderRadius: 14, background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", boxShadow: "0 12px 30px -10px rgba(0,0,0,0.6)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div className="rc-label" style={{ fontSize: 9.5 }}>Live transcript</div>
           <div className="rc-pill" style={{ fontSize: 10 }}><Icons.dot /> Auto-scroll</div>
@@ -392,7 +496,7 @@ export default function CallPage() {
             </div>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
