@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Frontend build artifacts
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# Backend virtualenv and Python artifacts
+backend/.venv/
+backend/**/*.pyc
+backend/**/__pycache__/
+
+# Local environment files
+backend/.env
+frontend/.env
+frontend/.env.local
