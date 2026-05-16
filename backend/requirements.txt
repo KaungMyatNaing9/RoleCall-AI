@@ -9,3 +9,4 @@ pillow==11.0.0
 opencv-python-headless==4.10.0.84
 anthropic>=0.40.0
 elevenlabs>=1.0.0
+mediapipe>=0.10.0
