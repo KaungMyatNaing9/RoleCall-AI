@@ -33,6 +33,7 @@ interface SimulationState {
   callElapsed: number;
   transcript: Array<{ speaker: string; timestamp: string; text: string; is_critical: boolean }>;
   liveSignals: VideoSignals;
+  signalHistory: VideoSignals[];
   criticalMomentVisible: boolean;
   criticalMomentMessage: string;
   isMuted: boolean;
@@ -61,6 +62,7 @@ interface SimulationState {
   endCall: () => void;
   addTranscriptEntry: (entry: SimulationState["transcript"][0]) => void;
   setLiveSignals: (signals: VideoSignals) => void;
+  pushSignalSnapshot: (s: VideoSignals) => void;
   triggerCriticalMoment: (message: string) => void;
   dismissCriticalMoment: () => void;
   toggleMute: () => void;
@@ -107,6 +109,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   callElapsed: 0,
   transcript: [],
   liveSignals: DEFAULT_SIGNALS,
+  signalHistory: [],
   criticalMomentVisible: false,
   criticalMomentMessage: "",
   isMuted: false,
@@ -133,6 +136,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   endCall: () => set({ callState: "ended" }),
   addTranscriptEntry: (entry) => set((s) => ({ transcript: [...s.transcript, entry] })),
   setLiveSignals: (liveSignals) => set({ liveSignals }),
+  pushSignalSnapshot: (s) => set((st) => ({ signalHistory: [...st.signalHistory, s] })),
   triggerCriticalMoment: (message) => set({ criticalMomentVisible: true, criticalMomentMessage: message }),
   dismissCriticalMoment: () => set({ criticalMomentVisible: false }),
   toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
@@ -142,6 +146,6 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
-    criticalMomentVisible: false, report: null,
+    criticalMomentVisible: false, report: null, signalHistory: [],
   }),
 }));

@@ -9,7 +9,8 @@ import { Logo } from "@/components/layout/Logo";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { cameraStreamRef } from "@/lib/cameraStream";
 import { api } from "@/lib/apiClient";
-import { formatTime } from "@/lib/utils";
+import { formatTime, scoreToTone } from "@/lib/utils";
+import { useVideoSignals } from "@/lib/useVideoSignals";
 
 type AvatarPreset = "margaret" | "james" | "elena" | "david" | "aanya" | "user";
 type MoodPreset = "worried" | "angry" | "neutral" | "upbeat" | "confused";
@@ -21,6 +22,16 @@ const AVATAR_MAP: Record<string, AvatarPreset> = {
   margaret: "margaret", james: "james", elena: "elena", david: "david", aanya: "aanya",
 };
 const MOOD_SET = new Set(["worried", "angry", "neutral", "upbeat", "confused"]);
+
+const CRITICAL_KEYWORDS = [
+  "chest", "tightness", "pain", "heart", "dizzy", "faint",
+  "bleeding", "breathing", "emergency", "unconscious", "severe", "stroke",
+  "can't breathe", "shortness", "pressure",
+];
+function hasCriticalKeyword(text: string): boolean {
+  const lower = text.toLowerCase();
+  return CRITICAL_KEYWORDS.some(kw => lower.includes(kw));
+}
 
 function toAvatarPreset(s: string): AvatarPreset { return AVATAR_MAP[s] ?? "margaret"; }
 function toMoodPreset(s: string): MoodPreset { return MOOD_SET.has(s) ? (s as MoodPreset) : "neutral"; }
@@ -60,7 +71,6 @@ export default function CallPage() {
   const [elapsed, setElapsed] = useState(0);
   const elapsedRef = useRef(0);
   const [visibleTranscript, setVisibleTranscript] = useState<TranscriptEntry[]>([]);
-  const [criticalVisible, setCriticalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
 
   const persona = store.persona;
@@ -78,6 +88,9 @@ export default function CallPage() {
       };
       setVisibleTranscript(prev => [...prev, entry]);
       store.addTranscriptEntry(entry);
+      if (source === "ai" && hasCriticalKeyword(message)) {
+        store.triggerCriticalMoment(message);
+      }
     },
     onError: (error: string) => console.error("ElevenLabs error:", error),
   });
@@ -85,6 +98,9 @@ export default function CallPage() {
   // Keep a ref so cleanup can call endSession without stale closure
   const conversationRef = useRef(conversation);
   conversationRef.current = conversation;
+
+  // Capture and analyse a frame every 3 s
+  useVideoSignals(videoRef, store.simulationId ?? "call-session");
 
   // Attach camera stream
   useEffect(() => {
@@ -138,6 +154,12 @@ export default function CallPage() {
     store.toggleMute();
     conversation.setInputMuted(newMuted);
   }, [store, conversation]);
+
+  const sigs = store.liveSignals;
+  const eyeV  = Math.round(sigs.eye_contact_estimate * 100);
+  const engV  = Math.round(sigs.facial_engagement_estimate * 100);
+  const stabV = Math.round(sigs.head_movement_stability * 100);
+  const paceV = Math.max(0, Math.min(100, 100 - Math.abs(sigs.speaking_pace_wpm - 135) * 1.5));
 
   const latestLine = visibleTranscript[visibleTranscript.length - 1];
   const progress = Math.min(elapsed / 300, 1);
@@ -219,13 +241,13 @@ export default function CallPage() {
               )}
 
               {/* Critical moment banner */}
-              {criticalVisible && (
+              {store.criticalMomentVisible && (
                 <div style={{ position: "absolute", top: 16, right: 16, width: 280, padding: "12px 14px", borderRadius: 12, background: "linear-gradient(180deg, rgba(248,113,113,0.18), rgba(248,113,113,0.06))", border: "1px solid rgba(248,113,113,0.5)", boxShadow: "0 0 30px -5px rgba(248,113,113,0.4)", backdropFilter: "blur(20px)", animation: "rc-floaty 3s ease-in-out infinite" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(248,113,113,0.25)", display: "grid", placeItems: "center", color: "#FCA5A5" }}><Icons.warn size={12} /></div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "#FCA5A5", letterSpacing: "0.02em" }}>CRITICAL MOMENT DETECTED</div>
                   </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-0)" }}>Patient revealed a potential red flag. Consider acknowledging and escalating before continuing.</div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-0)" }}>{store.criticalMomentMessage ? `"${store.criticalMomentMessage.slice(0, 110)}${store.criticalMomentMessage.length > 110 ? "…" : ""}" — consider escalating.` : "Patient revealed a potential red flag. Consider acknowledging and escalating before continuing."}</div>
                 </div>
               )}
 
@@ -241,8 +263,8 @@ export default function CallPage() {
                   <Icons.mic size={10} />
                 </div>
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "6px 8px", background: "linear-gradient(0deg, rgba(0,0,0,0.8), transparent)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10 }}>
-                  <span style={{ color: "#5EEAD4" }} className="rc-mono">EYE 62%</span>
-                  <span style={{ color: "#FCD34D" }} className="rc-mono">PACE FAST</span>
+                  <span className="rc-mono" style={{ color: eyeV >= 80 ? "#6EE7B7" : eyeV >= 65 ? "#FCD34D" : "#FCA5A5" }}>EYE {eyeV}%</span>
+                  <span className="rc-mono" style={{ color: sigs.speaking_pace_wpm > 170 ? "#FCA5A5" : sigs.speaking_pace_wpm > 155 ? "#FCD34D" : "#6EE7B7" }}>{sigs.speaking_pace_wpm} WPM</span>
                 </div>
               </div>
             </div>
@@ -286,7 +308,7 @@ export default function CallPage() {
           </div>
 
           <div style={{ flex: 1, padding: "14px 16px", overflow: "hidden", display: "flex", flexDirection: "column", gap: 12 }}>
-            {criticalVisible && (
+            {store.criticalMomentVisible && (
               <div style={{ padding: "12px 14px", borderRadius: 12, background: "linear-gradient(180deg, rgba(248,113,113,0.16), rgba(248,113,113,0.04))", border: "1px solid rgba(248,113,113,0.5)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <Icons.warn size={12} />
@@ -296,7 +318,7 @@ export default function CallPage() {
                   "Because you mentioned chest tightness after surgery, I need to connect you with urgent clinical support right now."
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                  <button className="rc-btn sm" style={{ flex: 1, justifyContent: "center" }} onClick={() => setCriticalVisible(false)}>Dismiss</button>
+                  <button className="rc-btn sm" style={{ flex: 1, justifyContent: "center" }} onClick={store.dismissCriticalMoment}>Dismiss</button>
                   <button className="rc-btn sm primary" style={{ flex: 1, justifyContent: "center" }}>Use phrasing</button>
                 </div>
               </div>
@@ -327,13 +349,13 @@ export default function CallPage() {
                 <span style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "none", letterSpacing: "normal" }}>coaching estimates</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <Signal label="Eye contact" v={62} tone="warn" />
-                <Signal label="Pace" v={78} tone="warn" raw="168 wpm" />
-                <Signal label="Engagement" v={84} tone="ok" />
-                <Signal label="Turn-taking" v={71} tone="violet" />
+                <Signal label="Eye contact" v={eyeV} tone={scoreToTone(eyeV)} />
+                <Signal label="Pace" v={Math.round(paceV)} tone={scoreToTone(paceV)} raw={`${sigs.speaking_pace_wpm} wpm`} />
+                <Signal label="Engagement" v={engV} tone={scoreToTone(engV)} />
+                <Signal label="Turn-taking" v={stabV} tone={scoreToTone(stabV)} />
               </div>
               <div style={{ display: "flex", gap: 14, fontSize: 10.5, color: "var(--ink-3)", marginTop: 10 }} className="rc-mono">
-                <span>3 interruptions</span><span>·</span><span>4 clarifiers</span><span>·</span><span>12 fillers</span>
+                <span>{sigs.interruption_count} interruptions</span><span>·</span><span>4 clarifiers</span><span>·</span><span>{sigs.filler_word_count} fillers</span>
               </div>
             </div>
           </div>
