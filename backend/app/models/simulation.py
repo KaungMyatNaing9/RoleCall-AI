@@ -1,5 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
+from app.models.persona import PersonaResponse
+from app.models.scenario import ScenarioResponse
+from app.models.rubric import RubricResponse
 from app.models.signals import AudioSignals, VideoSignals
 
 
@@ -36,6 +39,20 @@ class SimulationTurn(BaseModel):
     turn_index: int
     entry: TranscriptEntry
     call_ended: bool = False
+
+
+class CreateAgentRequest(BaseModel):
+    persona: PersonaResponse
+    scenario: ScenarioResponse
+    rubric: RubricResponse
+
+
+class CreateAgentResponse(BaseModel):
+    agent_id: str
+
+
+class SignedUrlResponse(BaseModel):
+    signed_url: str
     audio_signals: AudioSignals
     video_signals: Optional[VideoSignals] = None
     coaching: LiveCoaching

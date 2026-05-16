@@ -44,3 +44,4 @@ class AudioSignals(BaseModel):
 class SessionSummaryRequest(BaseModel):
     session_id: str
     duration_s: float = 342.0
+    transcript: str = ""  # user speech text for filler-word and pace computation

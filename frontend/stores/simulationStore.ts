@@ -18,6 +18,7 @@ interface SimulationState {
   scenario: ScenarioResponse | null;
   rubric: RubricResponse | null;
   simulationId: string | null;
+  agentId: string | null;
   isGenerating: boolean;
   agentLog: Array<{ agent: string; color: string; message: string }>;
 
@@ -32,6 +33,7 @@ interface SimulationState {
   callElapsed: number;
   transcript: Array<{ speaker: string; timestamp: string; text: string; is_critical: boolean }>;
   liveSignals: VideoSignals;
+  signalHistory: VideoSignals[];
   liveAudioSignals: AudioSignals;
   liveCoaching: LiveCoaching | null;
   criticalMomentVisible: boolean;
@@ -54,6 +56,7 @@ interface SimulationState {
   setScenario: (s: ScenarioResponse) => void;
   setRubric: (r: RubricResponse) => void;
   setSimulationId: (id: string) => void;
+  setAgentId: (id: string) => void;
   setIsGenerating: (v: boolean) => void;
   setAgentLog: (log: Array<{ agent: string; color: string; message: string }>) => void;
   setConsent: (key: keyof Pick<SimulationState, "consentVideoSignals" | "consentAudioSignals" | "consentSaveRecording" | "consentSaveTranscript">, value: boolean) => void;
@@ -61,6 +64,7 @@ interface SimulationState {
   endCall: () => void;
   addTranscriptEntry: (entry: SimulationState["transcript"][0]) => void;
   setLiveSignals: (signals: VideoSignals) => void;
+  pushSignalSnapshot: (s: VideoSignals) => void;
   setLiveAudioSignals: (signals: AudioSignals) => void;
   setLiveCoaching: (coaching: LiveCoaching | null) => void;
   triggerCriticalMoment: (message: string) => void;
@@ -107,6 +111,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   scenario: null,
   rubric: null,
   simulationId: null,
+  agentId: null,
   isGenerating: false,
   agentLog: [],
 
@@ -119,6 +124,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   callElapsed: 0,
   transcript: [],
   liveSignals: DEFAULT_SIGNALS,
+  signalHistory: [],
   liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
   liveCoaching: null,
   criticalMomentVisible: false,
@@ -139,6 +145,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setScenario: (scenario) => set({ scenario }),
   setRubric: (rubric) => set({ rubric }),
   setSimulationId: (simulationId) => set({ simulationId }),
+  setAgentId: (agentId) => set({ agentId }),
   setIsGenerating: (isGenerating) => set({ isGenerating }),
   setAgentLog: (agentLog) => set({ agentLog }),
   setConsent: (key, value) => set({ [key]: value } as Partial<SimulationState>),
@@ -156,6 +163,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   endCall: () => set({ callState: "ended" }),
   addTranscriptEntry: (entry) => set((s) => ({ transcript: [...s.transcript, entry] })),
   setLiveSignals: (liveSignals) => set({ liveSignals }),
+  pushSignalSnapshot: (s) => set((st) => ({ signalHistory: [...st.signalHistory, s] })),
   setLiveAudioSignals: (liveAudioSignals) => set({ liveAudioSignals }),
   setLiveCoaching: (liveCoaching) => set({ liveCoaching }),
   triggerCriticalMoment: (message) => set({ criticalMomentVisible: true, criticalMomentMessage: message }),
@@ -165,8 +173,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setReport: (report) => set({ report }),
   reset: () => set({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
-    persona: null, scenario: null, rubric: null, simulationId: null,
+    persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
+    criticalMomentVisible: false, report: null, signalHistory: [],
     liveSignals: DEFAULT_SIGNALS, liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
     liveCoaching: null, criticalMomentVisible: false, criticalMomentMessage: "", report: null,
   }),

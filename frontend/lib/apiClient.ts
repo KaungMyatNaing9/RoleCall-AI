@@ -34,6 +34,12 @@ export const api = {
   generateRubric: (body: object) =>
     request<RubricResponse>("/rubrics/generate", { method: "POST", body: JSON.stringify(body) }),
 
+  createAgent: (body: object) =>
+    request<CreateAgentResponse>("/simulations/create-agent", { method: "POST", body: JSON.stringify(body) }),
+
+  getSignedUrl: (agentId: string) =>
+    request<SignedUrlResponse>(`/simulations/signed-url/${agentId}`),
+
   simulationRespond: (body: object) =>
     request<SimulationTurn>("/simulations/respond", { method: "POST", body: JSON.stringify(body) }),
 
@@ -183,6 +189,14 @@ export interface MultimodalInsightItem {
   value: string;
   note?: string;
   tone: "ok" | "warn" | "bad";
+}
+
+export interface CreateAgentResponse {
+  agent_id: string;
+}
+
+export interface SignedUrlResponse {
+  signed_url: string;
 }
 
 export interface EvaluationReport {
