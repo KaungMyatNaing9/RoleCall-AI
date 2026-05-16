@@ -326,3 +326,55 @@ async def respond(
 def get_full_transcript(session_id: str) -> list[dict[str, str]]:
     session = _get_session(session_id)
     return session["history"]
+
+
+def _normalize_speaker(speaker: str) -> str:
+    normalized = speaker.strip().lower()
+    if normalized in {"user", "you", "trainee", "agent"}:
+        return "user"
+    return "patient"
+
+
+def import_transcript(session_id: str, entries: list[Any]) -> None:
+    """Replace session history from client transcript (e.g. after a browser call)."""
+    session = _get_session(session_id)
+    history: list[dict[str, str]] = []
+    for entry in entries:
+        text = str(getattr(entry, "text", "") or (entry.get("text") if isinstance(entry, dict) else "")).strip()
+        if not text:
+            continue
+        speaker_raw = str(getattr(entry, "speaker", "") or (entry.get("speaker") if isinstance(entry, dict) else "patient"))
+        history.append({"speaker": _normalize_speaker(speaker_raw), "text": text})
+    if history:
+        session["history"] = history
+
+
+def compute_session_audio_summary(session_id: str) -> tuple[AudioSignals, int]:
+    """Return (AudioSignals, turn_alternation_interruption_count) for a completed session.
+
+    Interruptions are counted by finding consecutive turns with the same speaker
+    (the normal alternating pattern is user→patient→user→...; any deviation counts).
+    Avg response latency is the avg_response_time_s already derived from word pacing.
+    """
+    history = SESSION_STORE.get(session_id, {}).get("history", [])
+
+    ta_interruptions = sum(
+        1 for i in range(1, len(history))
+        if history[i]["speaker"] == history[i - 1]["speaker"]
+    )
+
+    audio = _build_audio_signals(history)
+    audio = audio.model_copy(update={"interruption_count": ta_interruptions})
+    return audio, ta_interruptions
+
+
+def synthesize_timestamps(history: list[dict[str, str]]) -> list[str]:
+    """Return a MM:SS timestamp for every turn, estimated from word-count pacing."""
+    timestamps: list[str] = []
+    elapsed = 5.0
+    for turn in history:
+        timestamps.append(f"{int(elapsed) // 60:02d}:{int(elapsed) % 60:02d}")
+        words = len(turn["text"].split())
+        wpm = 118 if turn["speaker"] == "patient" else 130
+        elapsed += (words / wpm) * 60 + 1.5
+    return timestamps

@@ -39,6 +39,9 @@ class SimulationTurn(BaseModel):
     turn_index: int
     entry: TranscriptEntry
     call_ended: bool = False
+    audio_signals: AudioSignals
+    video_signals: Optional[VideoSignals] = None
+    coaching: LiveCoaching
 
 
 class CreateAgentRequest(BaseModel):
@@ -53,6 +56,3 @@ class CreateAgentResponse(BaseModel):
 
 class SignedUrlResponse(BaseModel):
     signed_url: str
-    audio_signals: AudioSignals
-    video_signals: Optional[VideoSignals] = None
-    coaching: LiveCoaching

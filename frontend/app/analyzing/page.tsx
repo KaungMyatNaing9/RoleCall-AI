@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { Icons } from "@/components/icons";
@@ -7,10 +7,10 @@ import { useSimulationStore } from "@/stores/simulationStore";
 import { api } from "@/lib/apiClient";
 
 const ANALYSIS_STEPS = [
-  { n: "Transcribing conversation", sub: "412 turns · 5:42 audio" },
+  { n: "Transcribing conversation", sub: "Extracting turns · timestamping" },
   { n: "Reviewing rubric performance", sub: "7 criteria scored" },
   { n: "Measuring speaking patterns", sub: "Pace, pauses, fillers" },
-  { n: "Analyzing video interaction signals", sub: "Eye-contact estimate, head stability, turn-taking" },
+  { n: "Analyzing interaction signals", sub: "Eye-contact estimate, head stability, turn-taking" },
   { n: "Generating coaching feedback", sub: "" },
   { n: "Building next practice plan", sub: "" },
 ];
@@ -19,26 +19,68 @@ export default function AnalyzingPage() {
   const router = useRouter();
   const store = useSimulationStore();
   const [currentStep, setCurrentStep] = useState(0);
+  const [status, setStatus] = useState<"analyzing" | "error">("analyzing");
+  const storeRef = useRef(store);
+  storeRef.current = store;
 
   useEffect(() => {
-    const sessionId = store.simulationId || `session-${Date.now()}`;
+    const s = storeRef.current;
+    const sessionId = s.simulationId || `session-${Date.now()}`;
 
     const advance = (step: number) => {
       setCurrentStep(step);
       if (step < ANALYSIS_STEPS.length - 1) {
         setTimeout(() => advance(step + 1), 600);
       } else {
-        api.generateEvaluation({ session_id: sessionId, persona_id: "persona-margaret-001", scenario_id: "scenario-postdischarge-001", rubric_id: "rubric-healthcare-001" })
-          .then(report => {
-            store.setReport(report);
-            setTimeout(() => router.push("/simulation/report"), 800);
+        api
+          .generateEvaluation({
+            session_id: sessionId,
+            persona_id: s.persona?.id ?? "persona-margaret-001",
+            scenario_id: s.scenario?.id ?? "scenario-postdischarge-001",
+            rubric_id: s.rubric?.id ?? "rubric-healthcare-001",
+            mode: s.mode ?? "video",
+            transcript: s.transcript.map((entry) => ({
+              speaker: entry.speaker,
+              text: entry.text,
+              timestamp: entry.timestamp,
+            })),
           })
-          .catch(() => setTimeout(() => router.push("/simulation/report"), 1500));
+          .then((report) => {
+            storeRef.current.setReport(report);
+            setTimeout(() => router.push("/simulation/report"), 600);
+          })
+          .catch(() => setStatus("error"));
       }
     };
 
     setTimeout(() => advance(0), 500);
   }, []);
+
+  if (status === "error") {
+    return (
+      <AppShell>
+        <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
+          <div style={{ width: 520, maxWidth: "90%", textAlign: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", display: "grid", placeItems: "center", margin: "0 auto 20px" }}>
+              <Icons.warn size={24} />
+            </div>
+            <h2 className="rc-h-2" style={{ margin: "0 0 8px" }}>Analysis failed</h2>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 28, lineHeight: 1.5 }}>
+              The evaluation agent encountered an error. Your session transcript is saved — you can retry or continue to the report.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button className="rc-btn ghost" onClick={() => { setStatus("analyzing"); setCurrentStep(0); }}>
+                <Icons.retry size={13} /> Retry
+              </button>
+              <button className="rc-btn primary" onClick={() => router.push("/simulation/report")}>
+                Continue to report
+              </button>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -91,7 +133,7 @@ export default function AnalyzingPage() {
               })}
             </div>
           </div>
-          <div style={{ marginTop: 20, fontSize: 12, color: "var(--ink-3)" }}>This usually takes about 4 seconds. Your report will open automatically.</div>
+          <div style={{ marginTop: 20, fontSize: 12, color: "var(--ink-3)" }}>This usually takes about 4–8 seconds. Your report will open automatically.</div>
         </div>
       </div>
     </AppShell>

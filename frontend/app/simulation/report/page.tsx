@@ -8,40 +8,46 @@ import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { PRIVACY_NOTICE } from "@/lib/constants";
+import type { EvaluationReport } from "@/lib/apiClient";
 
-const MOCK_REPORT = {
-  overall_score: 78, persona_name: "Margaret Lewis", duration: "5:42", mode: "video", industry: "Healthcare", difficulty: "Medium",
+// Minimal fallback so the page renders in demo/direct-nav with no report in store
+const MOCK_REPORT: EvaluationReport = {
+  session_id: "demo",
+  overall_score: 78,
+  persona_name: "Margaret Lewis",
+  duration: "5:42",
+  mode: "video",
+  industry: "Healthcare",
+  difficulty: "Medium",
   skill_scores: { "Empathy": 86, "Clarity": 80, "Active listening": 74, "Safety / escalation": 58, "Professionalism": 84, "Turn-taking": 76, "Video presence": 71, "Pace control": 68 },
   key_moments: [
     { timestamp: "00:42", position_pct: 0.07, type: "strong", title: "Strong empathy opening", excerpt: "I can hear this has been a worrying time." },
     { timestamp: "01:18", position_pct: 0.22, type: "improve", title: "Missed clarifying question", excerpt: "Got it, let me know which pill..." },
     { timestamp: "02:05", position_pct: 0.36, type: "risk", title: "Dizziness mention missed", excerpt: "I've been a little dizzy..." },
-    { timestamp: "02:41", position_pct: 0.47, type: "risk", title: "Escalation opportunity missed", excerpt: "…and I felt this tightness in my chest…", score_impact: -12, why_it_mattered: "Chest tightness after surgery is a red flag for cardiac or pulmonary complications.", better_response: "Because you mentioned chest tightness after surgery, I need to connect you with urgent clinical support right away. I'm going to stay with you while we get the right person involved." },
+    { timestamp: "02:41", position_pct: 0.47, type: "risk", title: "Escalation opportunity missed", excerpt: "…and I felt this tightness in my chest…", score_impact: -12, why_it_mattered: "Chest tightness after surgery is a red flag for cardiac or pulmonary complications.", better_response: "Because you mentioned chest tightness after surgery, I need to connect you with urgent clinical support right away." },
     { timestamp: "03:20", position_pct: 0.58, type: "question", title: "Good clarifying question", excerpt: "Can you tell me where the tightness was?" },
     { timestamp: "04:30", position_pct: 0.80, type: "strong", title: "Clear next steps", excerpt: "I'm going to connect you with our clinical team." },
   ],
   annotated_transcript: [
     { speaker: "You", timestamp: "00:42", text: "I can hear this has been a worrying time. Let me help you through this step by step.", tag: "strong", tag_label: "Strong empathy" },
-    { speaker: "Margaret", timestamp: "01:05", text: "I just got home yesterday and they gave me so many bottles…" },
+    { speaker: "Margaret Lewis", timestamp: "01:05", text: "I just got home yesterday and they gave me so many bottles…" },
     { speaker: "You", timestamp: "01:18", text: "Got it, let me know which pill you're asking about.", tag: "improve", tag_label: "Missed clarifying question — was she dizzy?" },
-    { speaker: "Margaret", timestamp: "02:05", text: "I've been a little dizzy, but I think it's just from the surgery." },
-    { speaker: "Margaret", timestamp: "02:41", text: "…and I felt this tightness in my chest, but I wasn't sure if it was from the surgery.", tag: "risk", tag_label: "Critical red flag mentioned" },
+    { speaker: "Margaret Lewis", timestamp: "02:05", text: "I've been a little dizzy, but I think it's just from the surgery." },
+    { speaker: "Margaret Lewis", timestamp: "02:41", text: "…and I felt this tightness in my chest, but I wasn't sure if it was from the surgery.", tag: "risk", tag_label: "Critical red flag mentioned" },
     { speaker: "You", timestamp: "02:45", text: "Okay, and were you taking the white pill in the morning or evening?", tag: "risk", tag_label: "Missed escalation — continued with medication question" },
     { speaker: "You", timestamp: "03:20", text: "Can you tell me where the tightness was and when it started?", tag: "question", tag_label: "Good clarifying question (slightly late)" },
   ],
   multimodal_insights: [
     { label: "Eye-contact estimate", value: "62%", note: "steady", tone: "warn" },
     { label: "Speaking pace", value: "164 wpm", note: "slightly fast", tone: "warn" },
-    { label: "Facial engagement", value: "consistent", tone: "ok" },
-    { label: "Camera presence", value: "centered", tone: "ok" },
     { label: "Filler words", value: "12", note: "um, like, you know", tone: "warn" },
-    { label: "Interruptions", value: "3", tone: "warn" },
-    { label: "Avg response", value: "18s", tone: "ok" },
+    { label: "Interruptions (turn)", value: "3", tone: "warn" },
+    { label: "Avg response latency", value: "18s", tone: "ok" },
     { label: "Longest pause", value: "4.2s", tone: "ok" },
   ],
   coach_feedback: {
     did_well: "Strong empathy, calm tone throughout, and a respectful pace that suited an older patient. Your opening line set a warm anchor.",
-    missed: "When Margaret mentioned chest tightness at 02:41, you continued with medication questions for 39 seconds instead of escalating immediately. This is the highest-impact moment of the call.",
+    missed: "When Margaret mentioned chest tightness at 02:41, you continued with medication questions for 39 seconds instead of escalating immediately.",
     try_next: "3-minute red-flag escalation drill · A harder variant where Margaret reveals symptoms earlier and tries to deflect.",
     next_drill_title: "Red-flag escalation drill (Hard)",
   },
@@ -50,6 +56,7 @@ const MOCK_REPORT = {
     { persona: "aanya", name: "Refund · interrupting customer", difficulty: "Hard", description: "Customer talks over you constantly.", why: "Turn-taking has plateaued" },
     { persona: "james", name: "Behavioral · STAR specificity", difficulty: "Medium", description: "Recruiter pushes for concrete examples.", why: "Strongest growth area" },
   ],
+  privacy_notice: PRIVACY_NOTICE,
 };
 
 const TAG_STYLES: Record<string, { bg: string; border: string; label: string }> = {
@@ -61,30 +68,96 @@ const TAG_STYLES: Record<string, { bg: string; border: string; label: string }> 
 
 const MOMENT_COLORS: Record<string, string> = { strong: "#6EE7B7", improve: "#FCD34D", risk: "#FCA5A5", question: "#93B4FF" };
 
-function ScoreTile({ l, v, tone, hot }: { l: string; v: number; tone: string; hot?: boolean }) {
-  const colors: Record<string, string> = { ok: "#6EE7B7", warn: "#FCD34D", bad: "#FCA5A5", violet: "#B5ACFD", teal: "#5EEAD4", blue: "#93B4FF" };
-  const c = colors[tone] || colors.violet;
+function parseDurationToSeconds(d: string): number {
+  const parts = d.split(":").map(Number);
+  return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
+}
+
+function fmtSeconds(s: number): string {
+  return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+function ScoreTile({ l, v, hot }: { l: string; v: number; hot?: boolean }) {
+  const c = v >= 80 ? "#5EEAD4" : v >= 70 ? "#93B4FF" : v >= 60 ? "#FCD34D" : "#FCA5A5";
   return (
-    <div style={{ padding: "12px 13px", borderRadius: 10, background: hot ? "linear-gradient(180deg, rgba(248,113,113,0.10), rgba(248,113,113,0.02))" : "rgba(255,255,255,0.03)", border: hot ? "1px solid rgba(248,113,113,0.45)" : "1px solid var(--line)", position: "relative" }}>
-      {hot && <div style={{ position: "absolute", top: 8, right: 8, fontSize: 9, color: "#FCA5A5", fontWeight: 600, letterSpacing: "0.05em" }}>FOCUS</div>}
-      <div style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.03em", textTransform: "uppercase" }}>{l}</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 4 }}>
-        <span style={{ fontSize: 24, fontWeight: 700, color: c, letterSpacing: "-0.02em" }}>{v}</span>
-        <span style={{ fontSize: 11, color: "var(--ink-3)" }}>/100</span>
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: hot ? "linear-gradient(180deg, rgba(248,113,113,0.10), rgba(248,113,113,0.02))" : "rgba(255,255,255,0.03)", border: hot ? "1px solid rgba(248,113,113,0.45)" : "1px solid var(--line)", position: "relative" }}>
+      {hot && <div style={{ position: "absolute", top: 7, right: 8, fontSize: 9, color: "#FCA5A5", fontWeight: 600, letterSpacing: "0.05em" }}>FOCUS</div>}
+      <div style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.03em", textTransform: "uppercase", marginBottom: 3 }}>{l}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: c, letterSpacing: "-0.02em" }}>{v}</span>
+        <span style={{ fontSize: 10, color: "var(--ink-3)" }}>/100</span>
       </div>
-      <div style={{ height: 3, marginTop: 6, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 3, marginTop: 5, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${v}%`, background: c, opacity: 0.8 }} />
       </div>
     </div>
   );
 }
 
-export default function ReportPage() {
-  const storeReport = useSimulationStore(s => s.report);
-  const r = storeReport || MOCK_REPORT;
-  const [selectedMoment, setSelectedMoment] = useState(r.key_moments.findIndex((m: any) => m.score_impact));
+function RadarChart({ scores }: { scores: Record<string, number> }) {
+  const entries = Object.entries(scores);
+  const N = entries.length;
+  if (N < 3) return null;
 
-  const moment = r.key_moments[selectedMoment] as any;
+  const cx = 100, cy = 100, r = 72;
+
+  const pt = (i: number, val: number) => {
+    const angle = (2 * Math.PI / N) * i - Math.PI / 2;
+    const d = r * val / 100;
+    return { x: cx + d * Math.cos(angle), y: cy + d * Math.sin(angle) };
+  };
+
+  const toPath = (pts: { x: number; y: number }[]) =>
+    pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
+
+  const scorePts = entries.map(([, v], i) => pt(i, v));
+
+  return (
+    <svg width={200} height={200} style={{ display: "block", margin: "0 auto", overflow: "visible" }}>
+      {/* Grid rings */}
+      {[20, 40, 60, 80, 100].map((l) => (
+        <path key={l} d={toPath(entries.map((_, i) => pt(i, l)))} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+      ))}
+      {/* Axis lines */}
+      {entries.map((_, i) => {
+        const p = pt(i, 100);
+        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />;
+      })}
+      {/* Score fill */}
+      <path d={toPath(scorePts)} fill="rgba(93,234,191,0.12)" stroke="#5EEAD4" strokeWidth="1.5" />
+      {/* Score dots */}
+      {scorePts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill="#5EEAD4" />)}
+      {/* Labels */}
+      {entries.map(([k, v], i) => {
+        const p = pt(i, 122);
+        const anchor = p.x < cx - 4 ? "end" : p.x > cx + 4 ? "start" : "middle";
+        const color = v >= 80 ? "#5EEAD4" : v >= 60 ? "#FCD34D" : "#FCA5A5";
+        return (
+          <text key={i} x={p.x} y={p.y} textAnchor={anchor} dominantBaseline="middle" fontSize="8.5" fontFamily="inherit">
+            <tspan fill="var(--ink-2)">{k.length > 12 ? k.slice(0, 11) + "…" : k}</tspan>
+            <tspan fill={color} fontWeight="700"> {v}</tspan>
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+export default function ReportPage() {
+  const storeReport = useSimulationStore((s) => s.report);
+  const r = storeReport ?? MOCK_REPORT;
+  const [selectedMoment, setSelectedMoment] = useState(() =>
+    r.key_moments.findIndex((m) => m.score_impact != null && m.score_impact < 0)
+  );
+
+  const moment = r.key_moments[selectedMoment] ?? null;
+
+  const totalS = parseDurationToSeconds(r.duration);
+  const rulerLabels = [0, 0.25, 0.5, 0.75, 1].map((f) => fmtSeconds(Math.round(totalS * f)));
+
+  // First sentence of did_well as the "good" callout, first sentence of missed as the "bad" note
+  const didWellFirst = r.coach_feedback.did_well.split(/[.!]/)[0].trim();
+  const missedFirst = r.coach_feedback.missed.split(/[.!]/)[0].trim();
 
   return (
     <AppShell>
@@ -102,9 +175,12 @@ export default function ReportPage() {
                 <div className="rc-pill warn">{r.difficulty}</div>
                 <div className="rc-pill"><Icons.clock size={10} />{r.duration}</div>
               </div>
-              <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em" }}>Post-discharge patient · {r.persona_name}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em" }}>
+                {r.industry} simulation · {r.persona_name}
+              </div>
               <div style={{ fontSize: 14, color: "var(--ink-1)", marginTop: 8, maxWidth: 720, lineHeight: 1.5 }}>
-                <strong style={{ color: "#6EE7B7" }}>Good foundation</strong>, needs stronger escalation. You showed strong empathy and a calm tone, but missed a critical escalation moment when the patient mentioned chest tightness.
+                <strong style={{ color: "#6EE7B7" }}>{didWellFirst}</strong>
+                {missedFirst ? `. ${missedFirst}.` : "."}
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
@@ -129,18 +205,26 @@ export default function ReportPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <div className="rc-label">Key moments · {r.key_moments.length} markers</div>
                 <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--ink-2)" }}>
-                  {Object.entries(MOMENT_COLORS).map(([k, c]) => <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 99, background: c }} />{k}</span>)}
+                  {Object.entries(MOMENT_COLORS).map(([k, c]) => (
+                    <span key={k} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 99, background: c }} />{k}
+                    </span>
+                  ))}
                 </div>
               </div>
               <div style={{ position: "relative", height: 44, marginBottom: 14 }}>
                 <div style={{ position: "absolute", left: 0, right: 0, top: 18, height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 99 }}>
-                  <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "72%", background: "linear-gradient(90deg,#2DD4BF,#8B7DFB)", borderRadius: 99, opacity: 0.5 }} />
+                  <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${r.overall_score}%`, background: "linear-gradient(90deg,#2DD4BF,#8B7DFB)", borderRadius: 99, opacity: 0.5 }} />
                 </div>
-                {r.key_moments.map((m: any, i: number) => (
-                  <div key={i} onClick={() => setSelectedMoment(i)} style={{ position: "absolute", left: `${m.position_pct * 100}%`, top: selectedMoment === i ? 12 : 14, transform: "translateX(-50%)", width: selectedMoment === i ? 16 : 12, height: selectedMoment === i ? 16 : 12, borderRadius: 99, background: MOMENT_COLORS[m.type] || "#fff", border: selectedMoment === i ? "3px solid white" : "2px solid #0A0E1A", boxShadow: selectedMoment === i ? `0 0 16px ${MOMENT_COLORS[m.type]}` : "none", cursor: "pointer" }} />
+                {r.key_moments.map((m, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedMoment(i)}
+                    style={{ position: "absolute", left: `${m.position_pct * 100}%`, top: selectedMoment === i ? 12 : 14, transform: "translateX(-50%)", width: selectedMoment === i ? 16 : 12, height: selectedMoment === i ? 16 : 12, borderRadius: 99, background: MOMENT_COLORS[m.type] || "#fff", border: selectedMoment === i ? "3px solid white" : "2px solid #0A0E1A", boxShadow: selectedMoment === i ? `0 0 16px ${MOMENT_COLORS[m.type]}` : "none", cursor: "pointer" }}
+                  />
                 ))}
                 <div style={{ position: "absolute", top: 30, left: 0, right: 0, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">
-                  <span>00:00</span><span>01:30</span><span>03:00</span><span>04:30</span><span>05:42</span>
+                  {rulerLabels.map((l) => <span key={l}>{l}</span>)}
                 </div>
               </div>
 
@@ -151,7 +235,7 @@ export default function ReportPage() {
                       <Icons.warn size={14} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: TAG_STYLES[moment.type]?.label }}>{moment.timestamp} · {moment.title}</span>
                     </div>
-                    {moment.score_impact && <div className="rc-pill bad">High impact · {moment.score_impact} pts</div>}
+                    {moment.score_impact != null && <div className="rc-pill bad">High impact · {moment.score_impact} pts</div>}
                   </div>
                   <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(0,0,0,0.3)", fontSize: 13, lineHeight: 1.5, fontStyle: "italic", color: "var(--ink-1)", marginBottom: 10, borderLeft: `2px solid ${TAG_STYLES[moment.type]?.label || "var(--line)"}` }}>
                     "{moment.excerpt}"
@@ -173,12 +257,13 @@ export default function ReportPage() {
                 <div className="rc-tabs"><div className="rc-tab active">All</div><div className="rc-tab">Highlights</div><div className="rc-tab">Missed</div></div>
               </div>
               <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-                {r.annotated_transcript.map((l: any, i: number) => {
+                {r.annotated_transcript.map((l, i) => {
                   const ts = l.tag ? TAG_STYLES[l.tag] : null;
+                  const isUser = l.speaker === "You";
                   return (
                     <div key={i} style={{ padding: "10px 12px", borderRadius: 10, background: ts ? ts.bg : "rgba(255,255,255,0.02)", border: ts ? `1px solid ${ts.border}` : "1px solid var(--line)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: l.speaker === "You" ? "#5EEAD4" : "#FCD34D" }}>{l.speaker}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: isUser ? "#5EEAD4" : "#FCD34D" }}>{l.speaker}</span>
                         <span style={{ fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">{l.timestamp}</span>
                       </div>
                       <div style={{ fontSize: 13, color: "var(--ink-1)", lineHeight: 1.5 }}>{l.text}</div>
@@ -192,16 +277,19 @@ export default function ReportPage() {
 
           {/* RIGHT */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0, overflow: "hidden" }}>
-            {/* Skill scores */}
+            {/* Skill scores + radar */}
             <div className="rc-glass" style={{ padding: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div className="rc-label">Skill scores</div>
                 <div className="rc-pill ok"><Icons.arrow size={10} />+6 vs last</div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {Object.entries(r.skill_scores).map(([k, v]: [string, any]) => (
-                  <ScoreTile key={k} l={k} v={v} tone={v >= 80 ? "teal" : v >= 70 ? "blue" : v >= 60 ? "warn" : "bad"} hot={v < 65} />
-                ))}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {Object.entries(r.skill_scores).map(([k, v]) => (
+                    <ScoreTile key={k} l={k} v={v} hot={v < 65} />
+                  ))}
+                </div>
+                <RadarChart scores={r.skill_scores} />
               </div>
             </div>
 
@@ -212,7 +300,7 @@ export default function ReportPage() {
                 <div style={{ display: "flex", gap: 6 }}><div className="rc-pill"><Icons.video size={10} />Video</div><div className="rc-pill"><Icons.mic size={10} />Audio</div></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                {r.multimodal_insights.map((x: any) => (
+                {r.multimodal_insights.map((x) => (
                   <div key={x.label} style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--line)" }}>
                     <div style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{x.label}</div>
                     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 3 }}>
@@ -223,7 +311,7 @@ export default function ReportPage() {
                 ))}
               </div>
               <div style={{ padding: "8px 11px", borderRadius: 8, fontSize: 11, lineHeight: 1.5, background: "rgba(79,124,255,0.06)", border: "1px solid rgba(79,124,255,0.25)", color: "var(--ink-2)" }}>
-                {PRIVACY_NOTICE}
+                {r.privacy_notice}
               </div>
             </div>
 
@@ -250,7 +338,11 @@ export default function ReportPage() {
                   </div>
                 </div>
               </div>
-              <Link href="/create"><button className="rc-btn primary" style={{ marginTop: 12, justifyContent: "center", position: "relative" }}><Icons.sparkle size={13} /> Generate escalation drill</button></Link>
+              <Link href="/create">
+                <button className="rc-btn primary" style={{ marginTop: 12, justifyContent: "center", position: "relative" }}>
+                  <Icons.sparkle size={13} /> Generate {r.coach_feedback.next_drill_title}
+                </button>
+              </Link>
             </div>
           </div>
         </div>
@@ -258,4 +350,3 @@ export default function ReportPage() {
     </AppShell>
   );
 }
-
