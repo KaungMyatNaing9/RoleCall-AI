@@ -7,7 +7,7 @@ from app.models.simulation import (
     CreateAgentResponse,
     SignedUrlResponse,
 )
-from app.services import mock_service, elevenlabs_service
+from app.services import mock_service, elevenlabs_service, simulation_service
 
 router = APIRouter()
 
@@ -31,9 +31,16 @@ async def get_signed_url(agent_id: str):
 @router.post("/respond", response_model=SimulationTurn)
 async def simulation_respond(req: SimulationRespondRequest):
     await asyncio.sleep(0.3)
-    return mock_service.get_next_turn(req.session_id, req.turn_index, req.user_message)
+    return await simulation_service.respond(
+        req.session_id,
+        req.turn_index,
+        req.user_message,
+        persona_id=req.persona_id,
+        scenario_id=req.scenario_id,
+        mode=req.mode,
+    )
 
 
 @router.get("/transcript/{session_id}")
 async def get_transcript(session_id: str):
-    return mock_service.get_full_transcript()
+    return simulation_service.get_full_transcript(session_id)

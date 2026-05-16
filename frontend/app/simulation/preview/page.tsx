@@ -1,10 +1,12 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { Icons } from "@/components/icons";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
+import { api } from "@/lib/apiClient";
 import { useSimulationStore } from "@/stores/simulationStore";
 
 const MOCK_LOG = [
@@ -14,9 +16,20 @@ const MOCK_LOG = [
   { agent: "Persona Generator", color: "#5EEAD4", message: "Voice: female, ~70-75, calm pace 130 wpm, slight tremor on first syllables." },
 ];
 
+const MODE_OPTIONS = [
+  { id: "phone", label: "Phone call", short: "Audio only", icon: <Icons.phone size={10} /> },
+  { id: "voice", label: "Web voice", short: "Mic + transcript", icon: <Icons.mic size={10} /> },
+  { id: "video", label: "Web video", short: "Camera + signals", icon: <Icons.video size={10} /> },
+  { id: "text", label: "Text / chat", short: "Written replies", icon: <Icons.chat size={10} /> },
+] as const;
+
 export default function PreviewPage() {
   const router = useRouter();
-  const { persona, scenario, rubric } = useSimulationStore();
+  const { persona, scenario, rubric, mode, agentLog, setMode } = useSimulationStore();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
 
   const p = persona || {
     name: "Margaret Lewis", age: 72, role: "Post-discharge patient", mood: "worried",
@@ -37,6 +50,109 @@ export default function PreviewPage() {
     { name: "Clarity of next steps", weight: 10, is_hot: false },
     { name: "Nonverbal engagement", weight: 10, is_hot: false },
   ]};
+  const resolvedMode = mode || "video";
+  const selectedModeOption = MODE_OPTIONS.find((option) => option.id === resolvedMode) || MODE_OPTIONS[2];
+  const resolvedAgentLog = agentLog.length ? agentLog : MOCK_LOG;
+  const openingLineDuration = Math.max(3, Math.round(p.opening_line.split(" ").length / 2.8));
+  const modeMeta = resolvedMode === "voice"
+    ? {
+        label: "Web voice",
+        icon: <Icons.mic size={10} />,
+        capabilities: [
+          ["Camera", "Optional", <Icons.cam size={12} key="cam" />],
+          ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+          ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+          ["Signals", "Audio focus", <Icons.signal size={12} key="sig" />],
+        ],
+        notice: "Voice mode emphasizes pace, interruption handling, filler words, and turn-taking without requiring full camera presence.",
+        cta: "Start voice session",
+        ctaIcon: <Icons.mic size={14} />,
+      }
+    : resolvedMode === "phone"
+      ? {
+          label: "Phone call",
+          icon: <Icons.phone size={10} />,
+          capabilities: [
+            ["Camera", "Off", <Icons.cam size={12} key="cam" />],
+            ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+            ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+            ["Signals", "Audio only", <Icons.signal size={12} key="sig" />],
+          ],
+          notice: "Phone mode removes visual cues and pressures the trainee to clarify, reassure, and lead the call using only voice.",
+          cta: "Start phone call",
+          ctaIcon: <Icons.phone size={14} />,
+        }
+      : resolvedMode === "text"
+        ? {
+            label: "Text / chat",
+            icon: <Icons.chat size={10} />,
+            capabilities: [
+              ["Camera", "Not used", <Icons.cam size={12} key="cam" />],
+              ["Microphone", "Not used", <Icons.mic size={12} key="mic" />],
+              ["Transcript", "Primary UI", <Icons.chat size={12} key="chat" />],
+              ["Signals", "Text only", <Icons.signal size={12} key="sig" />],
+            ],
+            notice: "Text mode is built for reading speed, written clarity, and de-escalation through careful wording rather than vocal delivery.",
+            cta: "Start chat simulation",
+            ctaIcon: <Icons.chat size={14} />,
+          }
+        : {
+            label: "Web video",
+            icon: <Icons.video size={10} />,
+            capabilities: [
+              ["Camera", "Required", <Icons.cam size={12} key="cam" />],
+              ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+              ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+              ["Signals", "Audio + Video", <Icons.signal size={12} key="sig" />],
+            ],
+            notice: "Video signals are coaching estimates — not emotion or truth detection. You can disable them any time.",
+            cta: "Start practice",
+            ctaIcon: <Icons.video size={14} />,
+          };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
+  const handlePlayVoice = async () => {
+    try {
+      setVoiceError("");
+      setIsPlayingVoice(true);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+
+      const blob = await api.synthesizeVoice({
+        text: p.opening_line,
+        persona_name: p.name,
+        voice_style: p.voice_style,
+      });
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setIsPlayingVoice(false);
+      audio.onerror = () => {
+        setVoiceError("Voice playback failed.");
+        setIsPlayingVoice(false);
+      };
+      await audio.play();
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : "Voice playback failed.");
+      setIsPlayingVoice(false);
+    }
+  };
 
   return (
     <AppShell>
@@ -54,7 +170,7 @@ export default function PreviewPage() {
           <div style={{ display: "flex", gap: 8 }}>
             <button className="rc-btn"><Icons.bookmark size={13} /> Save as template</button>
             <button className="rc-btn"><Icons.retry size={13} /> Regenerate</button>
-            <button className="rc-btn primary lg" onClick={() => router.push("/simulation/setup")}><Icons.video size={14} /> Start practice</button>
+            <button className="rc-btn primary lg" onClick={() => router.push("/simulation/setup")}>{modeMeta.ctaIcon} {modeMeta.cta}</button>
           </div>
         </div>
 
@@ -94,10 +210,17 @@ export default function PreviewPage() {
               <div className="rc-label" style={{ marginBottom: 6, fontSize: 10 }}>Sample opening line</div>
               <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-0)", fontStyle: "italic" }}>"{p.opening_line}"</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <div style={{ width: 24, height: 24, borderRadius: 99, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#2DD4BF,#8B7DFB)", color: "#06241F", display: "grid", placeItems: "center" }}><Icons.play size={10} /></div>
+                <button
+                  onClick={handlePlayVoice}
+                  disabled={isPlayingVoice}
+                  style={{ width: 24, height: 24, borderRadius: 99, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#2DD4BF,#8B7DFB)", color: "#06241F", display: "grid", placeItems: "center", opacity: isPlayingVoice ? 0.7 : 1 }}
+                >
+                  {isPlayingVoice ? <Icons.pause size={10} /> : <Icons.play size={10} />}
+                </button>
                 <Waveform tone="teal" bars={28} height={14} dense />
-                <span style={{ fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">0:04</span>
+                <span style={{ fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">0:{String(openingLineDuration).padStart(2, "0")}</span>
               </div>
+              {voiceError && <div style={{ marginTop: 8, fontSize: 11, color: "#FCA5A5" }}>{voiceError}</div>}
             </div>
           </div>
 
@@ -139,11 +262,35 @@ export default function PreviewPage() {
           <div style={{ display: "grid", gridTemplateRows: "auto 1fr", gap: 16 }}>
             <div className="rc-glass" style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div className="rc-label">Simulation mode</div>
-                <div className="rc-pill teal"><Icons.video size={10} />Web video</div>
+                <div className="rc-label">Choose training mode</div>
+                <div className="rc-pill teal">{modeMeta.icon}{modeMeta.label}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                {MODE_OPTIONS.map((option) => {
+                  const isSelected = option.id === resolvedMode;
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => setMode(option.id)}
+                      style={{
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: isSelected ? "1px solid rgba(139,125,251,0.55)" : "1px solid var(--line)",
+                        background: isSelected ? "linear-gradient(180deg, rgba(139,125,251,0.18), rgba(45,212,191,0.05))" : "rgba(255,255,255,0.03)",
+                        color: "var(--ink-0)",
+                        cursor: "pointer",
+                        boxShadow: isSelected ? "var(--sh-glow-v)" : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{option.icon}{option.label}</div>
+                      <div style={{ fontSize: 11, color: "var(--ink-2)" }}>{option.short}</div>
+                    </button>
+                  );
+                })}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                {[["Camera", "Required", <Icons.cam size={12} key="cam" />], ["Microphone", "Required", <Icons.mic size={12} key="mic" />], ["Transcript", "Live", <Icons.chat size={12} key="chat" />], ["Signals", "Audio + Video", <Icons.signal size={12} key="sig" />]].map(([l, v, i]) => (
+                {modeMeta.capabilities.map(([l, v, i]) => (
                   <div key={String(l)} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 11.5 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink-3)", fontSize: 10, marginBottom: 2 }}>{i}{l}</div>
                     <div>{v}</div>
@@ -151,13 +298,16 @@ export default function PreviewPage() {
                 ))}
               </div>
               <div style={{ padding: "9px 11px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.5, background: "rgba(45,212,191,0.06)", border: "1px solid rgba(45,212,191,0.25)", color: "var(--ink-1)" }}>
-                Video signals are coaching estimates — not emotion or truth detection. You can disable any time.
+                {modeMeta.notice}
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: "var(--ink-3)" }}>
+                Selected: <span style={{ color: "var(--ink-0)" }}>{selectedModeOption.label}</span>. You can switch modes without regenerating the persona.
               </div>
             </div>
             <div className="rc-glass" style={{ padding: 16, display: "flex", flexDirection: "column" }}>
               <div className="rc-label" style={{ marginBottom: 10 }}>Agent reasoning log</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                {MOCK_LOG.map((l, i) => (
+                {resolvedAgentLog.map((l, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, fontSize: 11.5, lineHeight: 1.4 }}>
                     <div style={{ width: 6, height: 6, borderRadius: 99, background: l.color, marginTop: 6, flexShrink: 0 }} />
                     <div>
