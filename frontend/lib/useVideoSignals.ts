@@ -4,7 +4,7 @@ import { api } from "@/lib/apiClient";
 import { useSimulationStore } from "@/stores/simulationStore";
 
 export function useVideoSignals(
-  videoRef: React.RefObject<HTMLVideoElement>,
+  videoRef: React.RefObject<HTMLVideoElement | null>,
   sessionId: string,
 ) {
   const store = useSimulationStore();

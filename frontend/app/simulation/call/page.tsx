@@ -138,7 +138,7 @@ export default function CallPage() {
 
     return () => {
       active = false;
-      conversationRef.current.endSession().catch(() => {});
+      try { conversationRef.current.endSession(); } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -152,7 +152,7 @@ export default function CallPage() {
   const handleToggleMute = useCallback(() => {
     const newMuted = !store.isMuted;
     store.toggleMute();
-    conversation.setInputMuted(newMuted);
+    conversation.setMuted(newMuted);
   }, [store, conversation]);
 
   const sigs = store.liveSignals;
