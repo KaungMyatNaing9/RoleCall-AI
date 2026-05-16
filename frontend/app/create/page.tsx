@@ -9,18 +9,11 @@ import { api } from "@/lib/apiClient";
 import { EVALUATION_CRITERIA } from "@/lib/constants";
 
 const STEPS = [
-  { n: 1, t: "Training type" },
-  { n: 2, t: "Industry" },
-  { n: 3, t: "Persona" },
-  { n: 4, t: "Difficulty" },
-  { n: 5, t: "Evaluation" },
-];
-
-const MODES = [
-  { id: "phone", n: "Phone Call", d: "Audio only · authentic phone UI", i: <Icons.phone size={14} /> },
-  { id: "voice", n: "Web Voice", d: "Browser mic + transcript", i: <Icons.mic size={14} /> },
-  { id: "video", n: "Web Video", d: "Camera + nonverbal signals", i: <Icons.video size={14} />, premium: true },
-  { id: "text", n: "Text / Chat", d: "For reading speed practice", i: <Icons.chat size={14} /> },
+  { n: 1, t: "Industry" },
+  { n: 2, t: "Persona" },
+  { n: 3, t: "Difficulty" },
+  { n: 4, t: "Evaluation" },
+  { n: 5, t: "Training Mode" },
 ];
 
 const INDUSTRIES = [
@@ -47,7 +40,6 @@ const DIFFICULTY_LEVELS = ["Easy", "Medium", "Hard", "Expert"];
 export default function CreatePage() {
   const router = useRouter();
   const store = useSimulationStore();
-  const [selectedMode, setSelectedMode] = useState("video");
   const [selectedIndustry, setSelectedIndustry] = useState("Healthcare");
   const [prompt, setPrompt] = useState("An elderly post-discharge patient who is confused about medication and later mentions chest tightness.");
   const [difficulty, setDifficulty] = useState("Medium");
@@ -66,7 +58,7 @@ export default function CreatePage() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      store.setMode(selectedMode);
+      store.setMode("video");
       store.setIndustry(selectedIndustry);
       store.setPersonaPrompt(prompt);
       store.setDifficulty(difficulty);
@@ -77,7 +69,7 @@ export default function CreatePage() {
       store.setPersona(persona);
 
       setAgentStatus("scenario");
-      const scenario = await api.generateScenario({ persona_id: persona.id, industry: selectedIndustry, difficulty, mode: selectedMode });
+      const scenario = await api.generateScenario({ persona_id: persona.id, industry: selectedIndustry, difficulty, mode: "adaptive" });
       store.setScenario(scenario);
 
       setAgentStatus("rubric");
@@ -112,8 +104,8 @@ export default function CreatePage() {
           <div className="rc-label" style={{ marginBottom: 16 }}>Create simulation</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, position: "relative" }}>
             {STEPS.map((s, i) => {
-              const isActive = s.n === 3;
-              const isDone = s.n < 3;
+              const isActive = s.n === 2;
+              const isDone = s.n < 2;
               return (
                 <div key={s.n} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", position: "relative" }}>
                   {i < STEPS.length - 1 && (
@@ -153,25 +145,7 @@ export default function CreatePage() {
           {/* Step 1 */}
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="rc-label">Step 1 · Training type</div>
-              {selectedMode && <div className="rc-pill ok"><Icons.check size={10} />{selectedMode} selected</div>}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-              {MODES.map(c => (
-                <div key={c.id} onClick={() => setSelectedMode(c.id)} style={{ padding: "12px 12px", borderRadius: 12, cursor: "pointer", border: c.id === selectedMode ? "1px solid rgba(139,125,251,0.6)" : "1px solid var(--line)", background: c.id === selectedMode ? "linear-gradient(180deg, rgba(139,125,251,0.18), rgba(45,212,191,0.04))" : "rgba(255,255,255,0.03)", boxShadow: c.id === selectedMode ? "var(--sh-glow-v)" : "none", position: "relative" }}>
-                  {c.premium && <div className="rc-pill teal" style={{ position: "absolute", top: 8, right: 8, fontSize: 9.5 }}>PREMIUM</div>}
-                  <div style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: c.id === selectedMode ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.05)", color: c.id === selectedMode ? "#B5ACFD" : "var(--ink-1)", marginBottom: 10 }}>{c.i}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{c.n}</div>
-                  <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 3, lineHeight: 1.4 }}>{c.d}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Step 2 */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="rc-label">Step 2 · Industry</div>
+              <div className="rc-label">Step 1 · Industry</div>
               {selectedIndustry && <div className="rc-pill ok"><Icons.check size={10} />{selectedIndustry}</div>}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 8 }}>
@@ -187,7 +161,7 @@ export default function CreatePage() {
           {/* Step 3 */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div className="rc-label">Step 3 · Generate persona</div>
+              <div className="rc-label">Step 2 · Generate persona</div>
               <div style={{ display: "flex", gap: 6 }}>
                 <div className="rc-pill"><Icons.upload size={11} />Document</div>
                 <div className="rc-pill"><Icons.upload size={11} />Patient scenario</div>
@@ -221,7 +195,7 @@ export default function CreatePage() {
         <div style={{ overflow: "hidden", display: "flex", flexDirection: "column", gap: 14 }}>
           {/* Step 4 */}
           <div className="rc-glass" style={{ padding: 16 }}>
-            <div className="rc-label" style={{ marginBottom: 12 }}>Step 4 · Difficulty &amp; behavior</div>
+            <div className="rc-label" style={{ marginBottom: 12 }}>Step 3 · Difficulty &amp; behavior</div>
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 6 }}>Difficulty</div>
               <div style={{ display: "flex", background: "rgba(255,255,255,0.04)", padding: 3, borderRadius: 8, border: "1px solid var(--line)" }}>
@@ -254,7 +228,7 @@ export default function CreatePage() {
           {/* Step 5 */}
           <div className="rc-glass" style={{ padding: 16, flex: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div className="rc-label">Step 5 · Evaluation focus</div>
+              <div className="rc-label">Step 4 · Evaluation focus</div>
               <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{evalFocus.length} of {EVALUATION_CRITERIA.length}</div>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -277,6 +251,9 @@ export default function CreatePage() {
           >
             {isGenerating ? <><span style={{ width: 14, height: 14, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Generating...</> : <><Icons.sparkle size={14} /> Generate Simulation</>}
           </button>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5, textAlign: "center" }}>
+            Choose the training mode after generation, once you&apos;ve reviewed the persona, scenario, and rubric.
+          </div>
         </div>
       </div>
       <div style={{ height: 28 }} />

@@ -16,9 +16,16 @@ const MOCK_LOG = [
   { agent: "Persona Generator", color: "#5EEAD4", message: "Voice: female, ~70-75, calm pace 130 wpm, slight tremor on first syllables." },
 ];
 
+const MODE_OPTIONS = [
+  { id: "phone", label: "Phone call", short: "Audio only", icon: <Icons.phone size={10} /> },
+  { id: "voice", label: "Web voice", short: "Mic + transcript", icon: <Icons.mic size={10} /> },
+  { id: "video", label: "Web video", short: "Camera + signals", icon: <Icons.video size={10} /> },
+  { id: "text", label: "Text / chat", short: "Written replies", icon: <Icons.chat size={10} /> },
+] as const;
+
 export default function PreviewPage() {
   const router = useRouter();
-  const { persona, scenario, rubric, mode, agentLog } = useSimulationStore();
+  const { persona, scenario, rubric, mode, agentLog, setMode } = useSimulationStore();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
@@ -44,8 +51,64 @@ export default function PreviewPage() {
     { name: "Nonverbal engagement", weight: 10, is_hot: false },
   ]};
   const resolvedMode = mode || "video";
+  const selectedModeOption = MODE_OPTIONS.find((option) => option.id === resolvedMode) || MODE_OPTIONS[2];
   const resolvedAgentLog = agentLog.length ? agentLog : MOCK_LOG;
   const openingLineDuration = Math.max(3, Math.round(p.opening_line.split(" ").length / 2.8));
+  const modeMeta = resolvedMode === "voice"
+    ? {
+        label: "Web voice",
+        icon: <Icons.mic size={10} />,
+        capabilities: [
+          ["Camera", "Optional", <Icons.cam size={12} key="cam" />],
+          ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+          ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+          ["Signals", "Audio focus", <Icons.signal size={12} key="sig" />],
+        ],
+        notice: "Voice mode emphasizes pace, interruption handling, filler words, and turn-taking without requiring full camera presence.",
+        cta: "Start voice session",
+        ctaIcon: <Icons.mic size={14} />,
+      }
+    : resolvedMode === "phone"
+      ? {
+          label: "Phone call",
+          icon: <Icons.phone size={10} />,
+          capabilities: [
+            ["Camera", "Off", <Icons.cam size={12} key="cam" />],
+            ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+            ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+            ["Signals", "Audio only", <Icons.signal size={12} key="sig" />],
+          ],
+          notice: "Phone mode removes visual cues and pressures the trainee to clarify, reassure, and lead the call using only voice.",
+          cta: "Start phone call",
+          ctaIcon: <Icons.phone size={14} />,
+        }
+      : resolvedMode === "text"
+        ? {
+            label: "Text / chat",
+            icon: <Icons.chat size={10} />,
+            capabilities: [
+              ["Camera", "Not used", <Icons.cam size={12} key="cam" />],
+              ["Microphone", "Not used", <Icons.mic size={12} key="mic" />],
+              ["Transcript", "Primary UI", <Icons.chat size={12} key="chat" />],
+              ["Signals", "Text only", <Icons.signal size={12} key="sig" />],
+            ],
+            notice: "Text mode is built for reading speed, written clarity, and de-escalation through careful wording rather than vocal delivery.",
+            cta: "Start chat simulation",
+            ctaIcon: <Icons.chat size={14} />,
+          }
+        : {
+            label: "Web video",
+            icon: <Icons.video size={10} />,
+            capabilities: [
+              ["Camera", "Required", <Icons.cam size={12} key="cam" />],
+              ["Microphone", "Required", <Icons.mic size={12} key="mic" />],
+              ["Transcript", "Live", <Icons.chat size={12} key="chat" />],
+              ["Signals", "Audio + Video", <Icons.signal size={12} key="sig" />],
+            ],
+            notice: "Video signals are coaching estimates — not emotion or truth detection. You can disable them any time.",
+            cta: "Start practice",
+            ctaIcon: <Icons.video size={14} />,
+          };
 
   useEffect(() => {
     return () => {
@@ -107,7 +170,7 @@ export default function PreviewPage() {
           <div style={{ display: "flex", gap: 8 }}>
             <button className="rc-btn"><Icons.bookmark size={13} /> Save as template</button>
             <button className="rc-btn"><Icons.retry size={13} /> Regenerate</button>
-            <button className="rc-btn primary lg" onClick={() => router.push("/simulation/setup")}><Icons.video size={14} /> Start practice</button>
+            <button className="rc-btn primary lg" onClick={() => router.push("/simulation/setup")}>{modeMeta.ctaIcon} {modeMeta.cta}</button>
           </div>
         </div>
 
@@ -199,11 +262,35 @@ export default function PreviewPage() {
           <div style={{ display: "grid", gridTemplateRows: "auto 1fr", gap: 16 }}>
             <div className="rc-glass" style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div className="rc-label">Simulation mode</div>
-                <div className="rc-pill teal"><Icons.video size={10} />{resolvedMode === "voice" ? "Web voice" : resolvedMode === "phone" ? "Phone call" : resolvedMode === "text" ? "Text / chat" : "Web video"}</div>
+                <div className="rc-label">Choose training mode</div>
+                <div className="rc-pill teal">{modeMeta.icon}{modeMeta.label}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                {MODE_OPTIONS.map((option) => {
+                  const isSelected = option.id === resolvedMode;
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => setMode(option.id)}
+                      style={{
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: isSelected ? "1px solid rgba(139,125,251,0.55)" : "1px solid var(--line)",
+                        background: isSelected ? "linear-gradient(180deg, rgba(139,125,251,0.18), rgba(45,212,191,0.05))" : "rgba(255,255,255,0.03)",
+                        color: "var(--ink-0)",
+                        cursor: "pointer",
+                        boxShadow: isSelected ? "var(--sh-glow-v)" : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>{option.icon}{option.label}</div>
+                      <div style={{ fontSize: 11, color: "var(--ink-2)" }}>{option.short}</div>
+                    </button>
+                  );
+                })}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-                {[["Camera", "Required", <Icons.cam size={12} key="cam" />], ["Microphone", "Required", <Icons.mic size={12} key="mic" />], ["Transcript", "Live", <Icons.chat size={12} key="chat" />], ["Signals", "Audio + Video", <Icons.signal size={12} key="sig" />]].map(([l, v, i]) => (
+                {modeMeta.capabilities.map(([l, v, i]) => (
                   <div key={String(l)} style={{ padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 11.5 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink-3)", fontSize: 10, marginBottom: 2 }}>{i}{l}</div>
                     <div>{v}</div>
@@ -211,7 +298,10 @@ export default function PreviewPage() {
                 ))}
               </div>
               <div style={{ padding: "9px 11px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.5, background: "rgba(45,212,191,0.06)", border: "1px solid rgba(45,212,191,0.25)", color: "var(--ink-1)" }}>
-                Video signals are coaching estimates — not emotion or truth detection. You can disable any time.
+                {modeMeta.notice}
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: "var(--ink-3)" }}>
+                Selected: <span style={{ color: "var(--ink-0)" }}>{selectedModeOption.label}</span>. You can switch modes without regenerating the persona.
               </div>
             </div>
             <div className="rc-glass" style={{ padding: 16, display: "flex", flexDirection: "column" }}>

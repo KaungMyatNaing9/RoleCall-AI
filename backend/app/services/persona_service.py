@@ -106,6 +106,58 @@ def _coerce_persona(payload: dict[str, Any], industry: str) -> PersonaResponse:
     )
 
 
+def _default_role_for_industry(industry: str) -> str:
+    defaults = {
+        "healthcare": "Healthcare provider handling a follow-up call",
+        "customer service": "Support representative handling a live issue",
+        "sales": "Sales rep guiding a discovery conversation",
+        "hr/interviews": "Interviewer running a structured practice session",
+        "education": "Advisor handling a student or parent conversation",
+        "finance": "Client support specialist responding to a concern",
+        "hospitality": "Front-desk or guest support lead handling a complaint",
+    }
+    return defaults.get(industry.lower(), f"{industry} professional managing the conversation")
+
+
+def _coerce_scenario(
+    payload: dict[str, Any],
+    industry: str,
+    difficulty: str,
+    mode: str,
+    persona: PersonaResponse | None,
+) -> dict[str, Any]:
+    persona_name = persona.name if persona else "the caller"
+    persona_role = persona.role if persona else f"{industry} participant"
+    title = str(payload.get("title") or f"{persona_name} {industry} practice scenario").strip()
+    description = str(
+        payload.get("description")
+        or f"{persona_name}, a {persona_role.lower()}, needs help with a realistic {industry.lower()} situation. "
+           f"The trainee should clarify the issue, guide the conversation, and manage any hidden risk cues."
+    ).strip()
+    your_role = str(payload.get("your_role") or _default_role_for_industry(industry)).strip()
+    duration = str(payload.get("duration") or ("~6 min" if mode == "text" else "~5 min")).strip()
+    objective = str(
+        payload.get("objective")
+        or f"Understand {persona_name}'s concern, respond clearly, and move toward a safe, useful next step."
+    ).strip()
+    success_condition = str(
+        payload.get("success_condition")
+        or f"The trainee addresses {persona_name}'s main concern, responds to any red flags, and closes with a clear next step."
+    ).strip()
+
+    return {
+        "id": str(payload.get("id") or f"scenario-{uuid.uuid4().hex[:10]}"),
+        "title": title[:140],
+        "description": description[:360],
+        "your_role": your_role[:120],
+        "duration": duration[:40],
+        "objective": objective[:260],
+        "success_condition": success_condition[:260],
+        "difficulty": str(payload.get("difficulty") or difficulty).strip() or difficulty,
+        "industry": str(payload.get("industry") or industry).strip() or industry,
+    }
+
+
 def _openai_json_sync(system_prompt: str, user_prompt: str) -> dict[str, Any]:
     payload = _post_json(
         "https://api.openai.com/v1/chat/completions",
@@ -180,7 +232,7 @@ async def generate_scenario(persona_id: str, industry: str, difficulty: str, mod
     persona = PERSONA_STORE.get(persona_id)
     if not persona:
         scenario = mock_service.get_scenario(persona_id, industry)
-        payload = scenario.model_dump()
+        payload = _coerce_scenario(scenario.model_dump(), industry, difficulty, mode, None)
         SCENARIO_STORE[payload["id"]] = payload
         return payload
 
@@ -198,17 +250,14 @@ async def generate_scenario(persona_id: str, industry: str, difficulty: str, mod
 
     try:
         if settings.openai_api_key:
-            payload = await _openai_json(OPENAI_SCENARIO_SYSTEM, user_prompt)
+            payload = _coerce_scenario(await _openai_json(OPENAI_SCENARIO_SYSTEM, user_prompt), industry, difficulty, mode, persona)
         elif settings.anthropic_api_key:
-            payload = await _anthropic_json(OPENAI_SCENARIO_SYSTEM, user_prompt)
+            payload = _coerce_scenario(await _anthropic_json(OPENAI_SCENARIO_SYSTEM, user_prompt), industry, difficulty, mode, persona)
         else:
-            payload = mock_service.get_scenario(persona_id, industry).model_dump()
+            payload = _coerce_scenario(mock_service.get_scenario(persona_id, industry).model_dump(), industry, difficulty, mode, persona)
     except Exception:
-        payload = mock_service.get_scenario(persona_id, industry).model_dump()
+        payload = _coerce_scenario(mock_service.get_scenario(persona_id, industry).model_dump(), industry, difficulty, mode, persona)
 
-    payload["id"] = payload.get("id") or f"scenario-{uuid.uuid4().hex[:10]}"
-    payload["difficulty"] = str(payload.get("difficulty") or difficulty)
-    payload["industry"] = str(payload.get("industry") or industry)
     SCENARIO_STORE[payload["id"]] = payload
     return payload
 

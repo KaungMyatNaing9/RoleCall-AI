@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BASE_URL = "/api/backend";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -107,6 +107,9 @@ export interface SimulationTurn {
   turn_index: number;
   entry: TranscriptEntry;
   call_ended: boolean;
+  audio_signals: AudioSignals;
+  video_signals?: VideoSignals | null;
+  coaching: LiveCoaching;
 }
 
 export interface VideoSignals {
@@ -129,6 +132,18 @@ export interface AudioSignals {
   interruption_count: number;
   avg_response_time_s: number;
   total_speaking_time_s: number;
+}
+
+export interface LiveCoaching {
+  summary: string;
+  next_best_action: string;
+  suggested_response: string;
+  strengths: string[];
+  warnings: string[];
+  clarity_estimate: number;
+  empathy_estimate: number;
+  turn_taking_estimate: number;
+  risk_cue_count: number;
 }
 
 export interface FrameAnalysisResponse {
