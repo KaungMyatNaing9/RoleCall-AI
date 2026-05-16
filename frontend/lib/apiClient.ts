@@ -11,6 +11,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${await res.text()}`);
+  }
+  return res.blob();
+}
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
 
@@ -37,6 +48,9 @@ export const api = {
 
   generateEvaluation: (body: object) =>
     request<EvaluationReport>("/evaluations/generate", { method: "POST", body: JSON.stringify(body) }),
+
+  synthesizeVoice: (body: { text: string; persona_name?: string; voice_style?: string; voice_id?: string }) =>
+    requestBlob("/voice/synthesize", { method: "POST", body: JSON.stringify(body) }),
 };
 
 // Type imports (mirroring backend models)

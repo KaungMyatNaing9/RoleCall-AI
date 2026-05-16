@@ -1,10 +1,12 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { Icons } from "@/components/icons";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
+import { api } from "@/lib/apiClient";
 import { useSimulationStore } from "@/stores/simulationStore";
 
 const MOCK_LOG = [
@@ -16,7 +18,11 @@ const MOCK_LOG = [
 
 export default function PreviewPage() {
   const router = useRouter();
-  const { persona, scenario, rubric } = useSimulationStore();
+  const { persona, scenario, rubric, mode, agentLog } = useSimulationStore();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
 
   const p = persona || {
     name: "Margaret Lewis", age: 72, role: "Post-discharge patient", mood: "worried",
@@ -37,6 +43,53 @@ export default function PreviewPage() {
     { name: "Clarity of next steps", weight: 10, is_hot: false },
     { name: "Nonverbal engagement", weight: 10, is_hot: false },
   ]};
+  const resolvedMode = mode || "video";
+  const resolvedAgentLog = agentLog.length ? agentLog : MOCK_LOG;
+  const openingLineDuration = Math.max(3, Math.round(p.opening_line.split(" ").length / 2.8));
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
+  const handlePlayVoice = async () => {
+    try {
+      setVoiceError("");
+      setIsPlayingVoice(true);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+
+      const blob = await api.synthesizeVoice({
+        text: p.opening_line,
+        persona_name: p.name,
+        voice_style: p.voice_style,
+      });
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setIsPlayingVoice(false);
+      audio.onerror = () => {
+        setVoiceError("Voice playback failed.");
+        setIsPlayingVoice(false);
+      };
+      await audio.play();
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : "Voice playback failed.");
+      setIsPlayingVoice(false);
+    }
+  };
 
   return (
     <AppShell>
@@ -94,10 +147,17 @@ export default function PreviewPage() {
               <div className="rc-label" style={{ marginBottom: 6, fontSize: 10 }}>Sample opening line</div>
               <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-0)", fontStyle: "italic" }}>"{p.opening_line}"</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <div style={{ width: 24, height: 24, borderRadius: 99, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#2DD4BF,#8B7DFB)", color: "#06241F", display: "grid", placeItems: "center" }}><Icons.play size={10} /></div>
+                <button
+                  onClick={handlePlayVoice}
+                  disabled={isPlayingVoice}
+                  style={{ width: 24, height: 24, borderRadius: 99, border: "none", cursor: "pointer", background: "linear-gradient(135deg,#2DD4BF,#8B7DFB)", color: "#06241F", display: "grid", placeItems: "center", opacity: isPlayingVoice ? 0.7 : 1 }}
+                >
+                  {isPlayingVoice ? <Icons.pause size={10} /> : <Icons.play size={10} />}
+                </button>
                 <Waveform tone="teal" bars={28} height={14} dense />
-                <span style={{ fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">0:04</span>
+                <span style={{ fontSize: 10, color: "var(--ink-3)" }} className="rc-mono">0:{String(openingLineDuration).padStart(2, "0")}</span>
               </div>
+              {voiceError && <div style={{ marginTop: 8, fontSize: 11, color: "#FCA5A5" }}>{voiceError}</div>}
             </div>
           </div>
 
@@ -140,7 +200,7 @@ export default function PreviewPage() {
             <div className="rc-glass" style={{ padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div className="rc-label">Simulation mode</div>
-                <div className="rc-pill teal"><Icons.video size={10} />Web video</div>
+                <div className="rc-pill teal"><Icons.video size={10} />{resolvedMode === "voice" ? "Web voice" : resolvedMode === "phone" ? "Phone call" : resolvedMode === "text" ? "Text / chat" : "Web video"}</div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 {[["Camera", "Required", <Icons.cam size={12} key="cam" />], ["Microphone", "Required", <Icons.mic size={12} key="mic" />], ["Transcript", "Live", <Icons.chat size={12} key="chat" />], ["Signals", "Audio + Video", <Icons.signal size={12} key="sig" />]].map(([l, v, i]) => (
@@ -157,7 +217,7 @@ export default function PreviewPage() {
             <div className="rc-glass" style={{ padding: 16, display: "flex", flexDirection: "column" }}>
               <div className="rc-label" style={{ marginBottom: 10 }}>Agent reasoning log</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                {MOCK_LOG.map((l, i) => (
+                {resolvedAgentLog.map((l, i) => (
                   <div key={i} style={{ display: "flex", gap: 8, fontSize: 11.5, lineHeight: 1.4 }}>
                     <div style={{ width: 6, height: 6, borderRadius: 99, background: l.color, marginTop: 6, flexShrink: 0 }} />
                     <div>

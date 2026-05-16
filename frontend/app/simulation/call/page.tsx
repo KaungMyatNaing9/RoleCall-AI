@@ -7,8 +7,8 @@ import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { cameraStreamRef } from "@/lib/cameraStream";
-import { MOCK_TRANSCRIPT } from "@/lib/constants";
 import { formatTime, timestampToMs } from "@/lib/utils";
+import { api, type PersonaResponse, type TranscriptEntry } from "@/lib/apiClient";
 
 function CtrlBtn({ icon, label, tone, onClick }: { icon: React.ReactNode; label: string; tone?: string; onClick?: () => void }) {
   const toneStyle = tone === "violet" ? { background: "rgba(139,125,251,0.18)", color: "#B5ACFD", borderColor: "rgba(139,125,251,0.4)" }
@@ -36,16 +36,68 @@ function Signal({ label, v, tone = "violet", raw }: { label: string; v: number; 
   );
 }
 
+const DEMO_TIMESTAMPS = ["00:15", "00:52", "01:30", "02:10", "02:41", "03:15", "04:00", "04:50"];
+
+function buildDemoTranscript(persona: PersonaResponse | null): TranscriptEntry[] {
+  const fallback = [
+    "Hi, I need some help with this situation.",
+    "I want to make sure I understand what happens next.",
+    "I may have left out an important detail earlier.",
+    "Can you walk me through this step by step?",
+  ];
+  const lines = (persona?.sample_lines?.length ? persona.sample_lines : fallback).slice(0, DEMO_TIMESTAMPS.length);
+  const redFlagHint = (persona?.hidden_red_flag || "").toLowerCase();
+
+  return lines.map((text, index) => {
+    const lower = text.toLowerCase();
+    const isCritical = Boolean(
+      redFlagHint && (
+        lower.includes(redFlagHint.split("—")[0].trim()) ||
+        lower.includes(redFlagHint.split("-")[0].trim()) ||
+        lower.includes("chest tightness") ||
+        lower.includes("shortness of breath") ||
+        lower.includes("suicid") ||
+        lower.includes("fraud") ||
+        lower.includes("unsafe")
+      ),
+    );
+    return {
+      speaker: "patient",
+      timestamp: DEMO_TIMESTAMPS[index] || DEMO_TIMESTAMPS[DEMO_TIMESTAMPS.length - 1],
+      text,
+      is_critical: isCritical,
+    };
+  });
+}
+
 export default function CallPage() {
   const router = useRouter();
   const store = useSimulationStore();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [visibleTranscript, setVisibleTranscript] = useState<typeof MOCK_TRANSCRIPT>([]);
+  const [visibleTranscript, setVisibleTranscript] = useState<TranscriptEntry[]>([]);
   const [criticalVisible, setCriticalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [personaTalking, setPersonaTalking] = useState(false);
+  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const persona = store.persona || {
+    id: "persona-margaret-001",
+    name: "Margaret Lewis",
+    age: 72,
+    role: "Post-discharge patient",
+    mood: "worried",
+    traits: ["polite", "hesitant", "apologetic"],
+    goal: "Understand new medication instructions",
+    hidden_red_flag: "Chest tightness — reveals only if asked about symptoms or after ~2 min",
+    behavior: "Apologetic, asks to repeat, easily distracted",
+    voice_style: "Elderly, calm, slightly anxious — light tremor",
+    opening_line: "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
+    avatar_preset: "margaret",
+    sample_lines: [],
+  };
 
   // Attach camera stream
   useEffect(() => {
@@ -63,8 +115,11 @@ export default function CallPage() {
 
   // Timed transcript playback
   useEffect(() => {
-    const callStart = Date.now();
-    MOCK_TRANSCRIPT.forEach(entry => {
+    const transcriptScript = buildDemoTranscript(store.persona);
+    setVisibleTranscript([]);
+    timeoutRefs.current.forEach(clearTimeout);
+    timeoutRefs.current = [];
+    transcriptScript.forEach(entry => {
       const ms = timestampToMs(entry.timestamp);
       const t = setTimeout(() => {
         setPersonaTalking(true);
@@ -78,6 +133,17 @@ export default function CallPage() {
       timeoutRefs.current.push(t);
     });
     return () => timeoutRefs.current.forEach(clearTimeout);
+  }, [store.persona]);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
   }, []);
 
   const handleEndCall = useCallback(() => {
@@ -88,6 +154,34 @@ export default function CallPage() {
 
   const latestLine = visibleTranscript[visibleTranscript.length - 1];
   const progress = Math.min(elapsed / 300, 1);
+
+  const handlePlayLatestLine = useCallback(async () => {
+    if (!latestLine) return;
+    try {
+      setIsPlayingVoice(true);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+      const blob = await api.synthesizeVoice({
+        text: latestLine.text,
+        persona_name: persona.name,
+        voice_style: persona.voice_style,
+      });
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => setIsPlayingVoice(false);
+      audio.onerror = () => setIsPlayingVoice(false);
+      await audio.play();
+    } catch {
+      setIsPlayingVoice(false);
+    }
+  }, [latestLine, persona.name, persona.voice_style]);
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "flex", flexDirection: "column", zIndex: 100 }}>
@@ -101,8 +195,8 @@ export default function CallPage() {
           <div className="rc-pill teal">
             <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", display: "inline-block", animation: "rc-pulse 1.4s infinite" }} />LIVE
           </div>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>Post-discharge patient · Margaret Lewis</div>
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Healthcare · Medium</div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{persona.role} · {persona.name}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{store.industry || "Healthcare"} · {store.difficulty || "Medium"}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -126,19 +220,24 @@ export default function CallPage() {
             <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 18, overflow: "hidden", background: "linear-gradient(160deg, #1A2540 0%, #0A1226 60%, #0E1A2C 100%)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.6)" }}>
               <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
                 <div style={{ transform: "scale(2.6)" }}>
-                  <PersonaAvatar persona="margaret" size={200} mood="worried" talking={personaTalking} />
+                  <PersonaAvatar persona={persona.avatar_preset as any} size={200} mood={persona.mood as any} talking={personaTalking} />
                 </div>
               </div>
 
               {/* Persona info */}
               <div style={{ position: "absolute", top: 16, left: 16, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(0,0,0,0.55)", border: "1px solid var(--line-2)", borderRadius: 12, backdropFilter: "blur(20px)" }}>
-                  <PersonaAvatar persona="margaret" size={34} mood="worried" />
-                  <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>Margaret Lewis</div><div style={{ fontSize: 11, color: "var(--ink-2)" }}>Patient · 72</div></div>
+                  <PersonaAvatar persona={persona.avatar_preset as any} size={34} mood={persona.mood as any} />
+                  <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{persona.name}</div><div style={{ fontSize: 11, color: "var(--ink-2)" }}>{persona.role} · {persona.age}</div></div>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <div className="rc-pill warn"><span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />Worried</div>
-                  <div className="rc-pill">Polite</div>
+                  <div className="rc-pill warn"><span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />{persona.mood}</div>
+                  <div className="rc-pill">{persona.traits[0] || "Conversational"}</div>
+                  {latestLine && (
+                    <button className="rc-pill" style={{ border: "none", cursor: "pointer" }} onClick={handlePlayLatestLine}>
+                      {isPlayingVoice ? <Icons.pause size={10} /> : <Icons.play size={10} />} Hear line
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -154,10 +253,7 @@ export default function CallPage() {
               {/* Caption */}
               {latestLine && (
                 <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", maxWidth: "70%", padding: "12px 18px", background: "rgba(0,0,0,0.65)", borderRadius: 14, border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", fontSize: 14.5, lineHeight: 1.5, fontStyle: "italic", textAlign: "center" }}>
-                  {latestLine.is_critical
-                    ? <>{'"…and I felt this '}<span style={{ background: "rgba(248,113,113,0.25)", padding: "1px 5px", borderRadius: 4, fontStyle: "normal", color: "#FCA5A5", fontWeight: 500 }}>tightness in my chest</span>{', but I wasn\'t sure…"'}</>
-                    : `"${latestLine.text}"`
-                  }
+                  {latestLine.is_critical ? <span style={{ color: "#FCA5A5" }}>"{latestLine.text}"</span> : `"${latestLine.text}"`}
                 </div>
               )}
 

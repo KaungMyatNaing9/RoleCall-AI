@@ -24,6 +24,8 @@ export default function SetupPage() {
   const [camOk, setCamOk] = useState(false);
   const [camError, setCamError] = useState(false);
   const store = useSimulationStore();
+  const personaName = store.persona?.name || "Margaret Lewis";
+  const personaRole = store.persona?.role || "post-discharge patient";
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -58,7 +60,7 @@ export default function SetupPage() {
             <div className="rc-label" style={{ marginBottom: 6 }}>Pre-call check</div>
             <h1 className="rc-h-1" style={{ margin: 0 }}>Get ready for your simulation</h1>
             <div style={{ fontSize: 13.5, color: "var(--ink-2)", marginTop: 6 }}>
-              You&apos;ll be on a call with <span style={{ color: "var(--ink-0)" }}>Margaret Lewis</span>, a post-discharge patient. Take a breath.
+              You&apos;ll be on a call with <span style={{ color: "var(--ink-0)" }}>{personaName}</span>, a {personaRole.toLowerCase()}. Take a breath.
             </div>
           </div>
 
