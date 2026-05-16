@@ -18,6 +18,7 @@ interface SimulationState {
   scenario: ScenarioResponse | null;
   rubric: RubricResponse | null;
   simulationId: string | null;
+  agentId: string | null;
   isGenerating: boolean;
   agentLog: Array<{ agent: string; color: string; message: string }>;
 
@@ -52,6 +53,7 @@ interface SimulationState {
   setScenario: (s: ScenarioResponse) => void;
   setRubric: (r: RubricResponse) => void;
   setSimulationId: (id: string) => void;
+  setAgentId: (id: string) => void;
   setIsGenerating: (v: boolean) => void;
   setAgentLog: (log: Array<{ agent: string; color: string; message: string }>) => void;
   setConsent: (key: keyof Pick<SimulationState, "consentVideoSignals" | "consentAudioSignals" | "consentSaveRecording" | "consentSaveTranscript">, value: boolean) => void;
@@ -92,6 +94,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   scenario: null,
   rubric: null,
   simulationId: null,
+  agentId: null,
   isGenerating: false,
   agentLog: [],
 
@@ -122,6 +125,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setScenario: (scenario) => set({ scenario }),
   setRubric: (rubric) => set({ rubric }),
   setSimulationId: (simulationId) => set({ simulationId }),
+  setAgentId: (agentId) => set({ agentId }),
   setIsGenerating: (isGenerating) => set({ isGenerating }),
   setAgentLog: (agentLog) => set({ agentLog }),
   setConsent: (key, value) => set({ [key]: value } as Partial<SimulationState>),
@@ -136,7 +140,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setReport: (report) => set({ report }),
   reset: () => set({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
-    persona: null, scenario: null, rubric: null, simulationId: null,
+    persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
     criticalMomentVisible: false, report: null,
   }),
