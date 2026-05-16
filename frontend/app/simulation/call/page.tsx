@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useConversation } from "@elevenlabs/react";
+import { useConversation, ConversationProvider } from "@elevenlabs/react";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
 import { Icons } from "@/components/icons";
@@ -64,7 +64,7 @@ function Signal({ label, v, tone = "violet", raw }: { label: string; v: number; 
 
 type TranscriptEntry = { speaker: string; timestamp: string; text: string; is_critical: boolean };
 
-export default function CallPage() {
+function CallPageContent() {
   const router = useRouter();
   const store = useSimulationStore();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -383,5 +383,13 @@ export default function CallPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CallPage() {
+  return (
+    <ConversationProvider>
+      <CallPageContent />
+    </ConversationProvider>
   );
 }
