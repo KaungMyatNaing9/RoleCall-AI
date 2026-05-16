@@ -1,14 +1,29 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useConversation } from "@elevenlabs/react";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
 import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { cameraStreamRef } from "@/lib/cameraStream";
-import { MOCK_TRANSCRIPT } from "@/lib/constants";
-import { formatTime, timestampToMs } from "@/lib/utils";
+import { api } from "@/lib/apiClient";
+import { formatTime } from "@/lib/utils";
+
+type AvatarPreset = "margaret" | "james" | "elena" | "david" | "aanya" | "user";
+type MoodPreset = "worried" | "angry" | "neutral" | "upbeat" | "confused";
+
+const AVATAR_MAP: Record<string, AvatarPreset> = {
+  elderly_woman: "margaret", elderly_man: "david",
+  middle_aged_woman: "elena", middle_aged_man: "james",
+  young_woman: "aanya", young_man: "james",
+  margaret: "margaret", james: "james", elena: "elena", david: "david", aanya: "aanya",
+};
+const MOOD_SET = new Set(["worried", "angry", "neutral", "upbeat", "confused"]);
+
+function toAvatarPreset(s: string): AvatarPreset { return AVATAR_MAP[s] ?? "margaret"; }
+function toMoodPreset(s: string): MoodPreset { return MOOD_SET.has(s) ? (s as MoodPreset) : "neutral"; }
 
 function CtrlBtn({ icon, label, tone, onClick }: { icon: React.ReactNode; label: string; tone?: string; onClick?: () => void }) {
   const toneStyle = tone === "violet" ? { background: "rgba(139,125,251,0.18)", color: "#B5ACFD", borderColor: "rgba(139,125,251,0.4)" }
@@ -36,58 +51,98 @@ function Signal({ label, v, tone = "violet", raw }: { label: string; v: number; 
   );
 }
 
+type TranscriptEntry = { speaker: string; timestamp: string; text: string; is_critical: boolean };
+
 export default function CallPage() {
   const router = useRouter();
   const store = useSimulationStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [visibleTranscript, setVisibleTranscript] = useState<typeof MOCK_TRANSCRIPT>([]);
+  const elapsedRef = useRef(0);
+  const [visibleTranscript, setVisibleTranscript] = useState<TranscriptEntry[]>([]);
   const [criticalVisible, setCriticalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const [personaTalking, setPersonaTalking] = useState(false);
-  const timeoutRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const persona = store.persona;
+  const scenario = store.scenario;
+  const avatarPreset = toAvatarPreset(persona?.avatar_preset ?? "margaret");
+  const moodPreset = toMoodPreset(persona?.mood ?? "neutral");
+
+  const conversation = useConversation({
+    onMessage: ({ message, source }: { message: string; source: string }) => {
+      const entry: TranscriptEntry = {
+        speaker: source === "ai" ? "patient" : "user",
+        timestamp: formatTime(elapsedRef.current),
+        text: message,
+        is_critical: false,
+      };
+      setVisibleTranscript(prev => [...prev, entry]);
+      store.addTranscriptEntry(entry);
+    },
+    onError: (error: string) => console.error("ElevenLabs error:", error),
+  });
+
+  // Keep a ref so cleanup can call endSession without stale closure
+  const conversationRef = useRef(conversation);
+  conversationRef.current = conversation;
 
   // Attach camera stream
   useEffect(() => {
     const stream = cameraStreamRef.get();
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
+    if (stream && videoRef.current) videoRef.current.srcObject = stream;
   }, []);
 
-  // Timer
+  // Elapsed timer
   useEffect(() => {
-    const interval = setInterval(() => setElapsed(e => e + 1), 1000);
+    const interval = setInterval(() => {
+      setElapsed(e => {
+        const next = e + 1;
+        elapsedRef.current = next;
+        return next;
+      });
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Timed transcript playback
+  // Start ElevenLabs session using agentId from store
   useEffect(() => {
-    const callStart = Date.now();
-    MOCK_TRANSCRIPT.forEach(entry => {
-      const ms = timestampToMs(entry.timestamp);
-      const t = setTimeout(() => {
-        setPersonaTalking(true);
-        setVisibleTranscript(prev => [...prev, entry]);
-        if (entry.is_critical) {
-          setCriticalVisible(true);
-          setTimeout(() => setCriticalVisible(false), 15000);
-        }
-        setTimeout(() => setPersonaTalking(false), 3000);
-      }, ms);
-      timeoutRefs.current.push(t);
-    });
-    return () => timeoutRefs.current.forEach(clearTimeout);
-  }, []);
+    const agentId = store.agentId;
+    if (!agentId) return;
 
-  const handleEndCall = useCallback(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { signed_url } = await api.getSignedUrl(agentId);
+        if (!active) return;
+        await conversationRef.current.startSession({ signedUrl: signed_url });
+      } catch (err) {
+        console.error("Failed to start ElevenLabs session:", err);
+      }
+    })();
+
+    return () => {
+      active = false;
+      conversationRef.current.endSession().catch(() => {});
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleEndCall = useCallback(async () => {
+    try { await conversationRef.current.endSession(); } catch {}
     cameraStreamRef.stop();
     store.endCall();
     router.push("/analyzing");
   }, [router, store]);
 
+  const handleToggleMute = useCallback(() => {
+    const newMuted = !store.isMuted;
+    store.toggleMute();
+    conversation.setInputMuted(newMuted);
+  }, [store, conversation]);
+
   const latestLine = visibleTranscript[visibleTranscript.length - 1];
   const progress = Math.min(elapsed / 300, 1);
+  const personaLabel = persona ? `${persona.role} · ${persona.name}` : "Simulation active";
+  const contextLabel = scenario ? `${scenario.industry} · ${scenario.difficulty}` : "";
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "flex", flexDirection: "column", zIndex: 100 }}>
@@ -101,8 +156,8 @@ export default function CallPage() {
           <div className="rc-pill teal">
             <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", display: "inline-block", animation: "rc-pulse 1.4s infinite" }} />LIVE
           </div>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>Post-discharge patient · Margaret Lewis</div>
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>Healthcare · Medium</div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{personaLabel}</div>
+          {contextLabel && <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{contextLabel}</div>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -126,24 +181,29 @@ export default function CallPage() {
             <div style={{ position: "relative", width: "100%", height: "100%", borderRadius: 18, overflow: "hidden", background: "linear-gradient(160deg, #1A2540 0%, #0A1226 60%, #0E1A2C 100%)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.6)" }}>
               <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
                 <div style={{ transform: "scale(2.6)" }}>
-                  <PersonaAvatar persona="margaret" size={200} mood="worried" talking={personaTalking} />
+                  <PersonaAvatar persona={avatarPreset} size={200} mood={moodPreset} talking={conversation.isSpeaking} />
                 </div>
               </div>
 
               {/* Persona info */}
               <div style={{ position: "absolute", top: 16, left: 16, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(0,0,0,0.55)", border: "1px solid var(--line-2)", borderRadius: 12, backdropFilter: "blur(20px)" }}>
-                  <PersonaAvatar persona="margaret" size={34} mood="worried" />
-                  <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>Margaret Lewis</div><div style={{ fontSize: 11, color: "var(--ink-2)" }}>Patient · 72</div></div>
+                  <PersonaAvatar persona={avatarPreset} size={34} mood={moodPreset} />
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{persona?.name ?? "Persona"}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-2)" }}>{persona ? `${persona.role} · ${persona.age}` : ""}</div>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <div className="rc-pill warn"><span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />Worried</div>
-                  <div className="rc-pill">Polite</div>
-                </div>
+                {persona && (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <div className="rc-pill warn"><span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />{persona.mood}</div>
+                    {persona.traits.slice(0, 1).map(t => <div key={t} className="rc-pill">{t}</div>)}
+                  </div>
+                )}
               </div>
 
               {/* Speaking indicator */}
-              {personaTalking && (
+              {conversation.isSpeaking && (
                 <div style={{ position: "absolute", bottom: 16, left: 16, display: "inline-flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "rgba(0,0,0,0.55)", border: "1px solid var(--line-2)", borderRadius: 12, backdropFilter: "blur(20px)" }}>
                   <span style={{ width: 8, height: 8, borderRadius: 99, background: "#2DD4BF", animation: "rc-pulse 1s infinite" }} />
                   <span style={{ fontSize: 12, color: "#5EEAD4", fontWeight: 500 }}>Speaking</span>
@@ -154,10 +214,7 @@ export default function CallPage() {
               {/* Caption */}
               {latestLine && (
                 <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", maxWidth: "70%", padding: "12px 18px", background: "rgba(0,0,0,0.65)", borderRadius: 14, border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", fontSize: 14.5, lineHeight: 1.5, fontStyle: "italic", textAlign: "center" }}>
-                  {latestLine.is_critical
-                    ? <>{'"…and I felt this '}<span style={{ background: "rgba(248,113,113,0.25)", padding: "1px 5px", borderRadius: 4, fontStyle: "normal", color: "#FCA5A5", fontWeight: 500 }}>tightness in my chest</span>{', but I wasn\'t sure…"'}</>
-                    : `"${latestLine.text}"`
-                  }
+                  {`"${latestLine.text}"`}
                 </div>
               )}
 
@@ -180,7 +237,9 @@ export default function CallPage() {
                   {[[88,58],[112,58],[100,75],[90,90],[110,90]].map(([x,y],i) => <circle key={i} cx={x} cy={y} r="1.5" fill="#2DD4BF"/>)}
                 </svg>
                 <div style={{ position: "absolute", top: 8, left: 8, fontSize: 10, padding: "2px 7px", background: "rgba(0,0,0,0.55)", borderRadius: 6 }}>You</div>
-                <div style={{ position: "absolute", top: 8, right: 8, width: 18, height: 18, background: "rgba(0,0,0,0.55)", borderRadius: 6, display: "grid", placeItems: "center", color: "#5EEAD4" }}><Icons.mic size={10} /></div>
+                <div style={{ position: "absolute", top: 8, right: 8, width: 18, height: 18, background: store.isMuted ? "rgba(248,113,113,0.4)" : "rgba(0,0,0,0.55)", borderRadius: 6, display: "grid", placeItems: "center", color: store.isMuted ? "#FCA5A5" : "#5EEAD4" }}>
+                  <Icons.mic size={10} />
+                </div>
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "6px 8px", background: "linear-gradient(0deg, rgba(0,0,0,0.8), transparent)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10 }}>
                   <span style={{ color: "#5EEAD4" }} className="rc-mono">EYE 62%</span>
                   <span style={{ color: "#FCD34D" }} className="rc-mono">PACE FAST</span>
@@ -192,7 +251,7 @@ export default function CallPage() {
           {/* Controls */}
           <div style={{ padding: "18px 22px 22px", display: "flex", justifyContent: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", borderRadius: 18, backdropFilter: "blur(20px)", boxShadow: "0 14px 40px -10px rgba(0,0,0,0.7)" }}>
-              <CtrlBtn icon={<Icons.mic size={18} />} label="Mute" onClick={store.toggleMute} />
+              <CtrlBtn icon={<Icons.mic size={18} />} label={store.isMuted ? "Unmute" : "Mute"} tone={store.isMuted ? "amber" : undefined} onClick={handleToggleMute} />
               <CtrlBtn icon={<Icons.cam size={18} />} label="Camera" onClick={store.toggleCamera} />
               <CtrlBtn icon={<Icons.hint size={18} />} label="Hint" tone="violet" />
               <CtrlBtn icon={<Icons.bookmark size={18} />} label="Mark" />
@@ -287,11 +346,15 @@ export default function CallPage() {
           <div className="rc-label" style={{ fontSize: 9.5 }}>Live transcript</div>
           <div className="rc-pill" style={{ fontSize: 10 }}><Icons.dot /> Auto-scroll</div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
-          {visibleTranscript.slice(-3).map((l, i) => (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12, minHeight: 40 }}>
+          {visibleTranscript.length === 0 ? (
+            <div style={{ color: "var(--ink-3)", fontSize: 11, fontStyle: "italic" }}>
+              {store.agentId ? "Connecting to agent…" : "Waiting for conversation…"}
+            </div>
+          ) : visibleTranscript.slice(-3).map((l, i) => (
             <div key={i} style={{ display: "flex", gap: 8, opacity: i === Math.min(2, visibleTranscript.length - 1) ? 1 : 0.85 }}>
               <span style={{ fontSize: 10, color: "var(--ink-3)", width: 32, flexShrink: 0, paddingTop: 1 }} className="rc-mono">{l.timestamp}</span>
-              <span style={{ color: l.speaker === "patient" ? "#FCD34D" : "#5EEAD4", fontWeight: 500, width: 54, flexShrink: 0, fontSize: 11.5 }}>{l.speaker === "patient" ? "Patient:" : "You:"}</span>
+              <span style={{ color: l.speaker === "patient" ? "#FCD34D" : "#5EEAD4", fontWeight: 500, width: 54, flexShrink: 0, fontSize: 11.5 }}>{l.speaker === "patient" ? (persona?.name?.split(" ")[0] ?? "Patient") + ":" : "You:"}</span>
               <span style={{ color: "var(--ink-1)", lineHeight: 1.4 }}>{l.text}</span>
             </div>
           ))}

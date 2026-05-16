@@ -55,7 +55,7 @@ export default function CreatePage() {
   const [toggles, setToggles] = useState({ hidden_red_flag: true, random_surprise: true, light_accent: false });
   const [evalFocus, setEvalFocus] = useState(["Empathy", "Clarity", "Active listening", "Escalation", "Nonverbal presence", "Eye-contact estimate"]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "done">("idle");
+  const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "agent" | "done">("idle");
 
   const suggestions = ["Angry customer demanding refund", "Bank scammer targeting older adult", "Recruiter for SWE intern", "Parent upset about grades"];
 
@@ -85,6 +85,14 @@ export default function CreatePage() {
       store.setRubric(rubric);
       store.setSimulationId(`session-${Date.now()}`);
 
+      setAgentStatus("agent");
+      try {
+        const agentResult = await api.createAgent({ persona, scenario, rubric });
+        store.setAgentId(agentResult.agent_id);
+      } catch (err) {
+        console.warn("ElevenLabs agent creation failed:", err);
+      }
+
       setAgentStatus("done");
       setTimeout(() => router.push("/simulation/preview"), 400);
     } catch (e) {
@@ -98,6 +106,7 @@ export default function CreatePage() {
     { n: "Persona Generator", s: agentStatus === "persona" ? "working" : agentStatus === "idle" ? "queued" : "done", i: <Icons.user size={11} /> },
     { n: "Scenario Builder", s: agentStatus === "scenario" ? "working" : ["idle", "persona"].includes(agentStatus) ? "queued" : "done", i: <Icons.flag size={11} /> },
     { n: "Rubric Agent", s: agentStatus === "rubric" ? "working" : ["idle", "persona", "scenario"].includes(agentStatus) ? "queued" : "done", i: <Icons.check size={11} /> },
+    { n: "ElevenLabs Agent", s: agentStatus === "agent" ? "working" : ["idle", "persona", "scenario", "rubric"].includes(agentStatus) ? "queued" : "done", i: <Icons.mic size={11} /> },
   ];
 
   return (
