@@ -32,6 +32,11 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
         cache: "no-store",
       });
 
+      if (upstream.status >= 500) {
+        lastError = new Error(`Upstream ${upstream.status} from ${baseUrl}`);
+        continue;
+      }
+
       const responseHeaders = new Headers();
       const contentType = upstream.headers.get("content-type");
       if (contentType) {

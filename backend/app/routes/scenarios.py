@@ -9,6 +9,9 @@ router = APIRouter()
 @router.post("/generate", response_model=ScenarioResponse)
 async def generate_scenario(req: ScenarioGenerateRequest):
     if claude_service.is_available():
-        return await claude_service.generate_scenario(req.persona_id, req.industry, req.difficulty, req.mode)
+        scenario = await claude_service.generate_scenario(req.persona_id, req.industry, req.difficulty, req.mode)
+        persona_service.SCENARIO_STORE[scenario.id] = scenario.model_dump()
+        return scenario
     await asyncio.sleep(0.5)
-    return await persona_service.generate_scenario(req.persona_id, req.industry, req.difficulty, req.mode)
+    payload = await persona_service.generate_scenario(req.persona_id, req.industry, req.difficulty, req.mode)
+    return ScenarioResponse(**payload)

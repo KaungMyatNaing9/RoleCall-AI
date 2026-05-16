@@ -2,8 +2,11 @@ const BASE_URL = "/api/backend";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers as Record<string, string> | undefined),
+    },
   });
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
@@ -13,8 +16,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers as Record<string, string> | undefined),
+    },
   });
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);

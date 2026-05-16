@@ -47,6 +47,7 @@ export default function CreatePage() {
   const [toggles, setToggles] = useState({ hidden_red_flag: true, random_surprise: true, light_accent: false });
   const [evalFocus, setEvalFocus] = useState(["Empathy", "Clarity", "Active listening", "Escalation", "Nonverbal presence", "Eye-contact estimate"]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState("");
   const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "agent" | "done">("idle");
 
   const suggestions = ["Angry customer demanding refund", "Bank scammer targeting older adult", "Recruiter for SWE intern", "Parent upset about grades"];
@@ -57,6 +58,7 @@ export default function CreatePage() {
 
   const handleGenerate = async () => {
     setIsGenerating(true);
+    setGenerateError("");
     try {
       store.setMode("video");
       store.setIndustry(selectedIndustry);
@@ -89,6 +91,8 @@ export default function CreatePage() {
       setTimeout(() => router.push("/simulation/preview"), 400);
     } catch (e) {
       console.error(e);
+      setGenerateError(e instanceof Error ? e.message : "Could not reach the backend. Start the API server and try again.");
+      setAgentStatus("idle");
     } finally {
       setIsGenerating(false);
     }
@@ -260,6 +264,11 @@ export default function CreatePage() {
           >
             {isGenerating ? <><span style={{ width: 14, height: 14, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Generating...</> : <><Icons.sparkle size={14} /> Generate Simulation</>}
           </button>
+          {generateError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "#FCA5A5", lineHeight: 1.5, textAlign: "center" }}>
+              {generateError}
+            </div>
+          )}
           <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5, textAlign: "center" }}>
             Choose the training mode after generation, once you&apos;ve reviewed the persona, scenario, and rubric.
           </div>

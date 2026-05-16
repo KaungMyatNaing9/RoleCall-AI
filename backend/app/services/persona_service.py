@@ -12,6 +12,7 @@ from app.services import mock_service
 
 PERSONA_STORE: dict[str, PersonaResponse] = {}
 SCENARIO_STORE: dict[str, dict[str, Any]] = {}
+RUBRIC_STORE: dict[str, Any] = {}
 
 OPENAI_PERSONA_SYSTEM = """You generate realistic training personas for RoleCall AI.
 Return JSON only with keys:
