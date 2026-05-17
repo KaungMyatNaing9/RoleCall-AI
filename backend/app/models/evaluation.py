@@ -11,11 +11,15 @@ class TranscriptSyncEntry(BaseModel):
 
 class EvaluationGenerateRequest(BaseModel):
     session_id: str
-    persona_id: str = "persona-margaret-001"
-    scenario_id: str = "scenario-postdischarge-001"
-    rubric_id: str = "rubric-healthcare-001"
+    persona_id: str
+    scenario_id: str
+    rubric_id: str
     transcript: list[TranscriptSyncEntry] = Field(default_factory=list)
     mode: str = "video"
+    # Client-side fallbacks so the report uses the right metadata even after a backend restart.
+    persona_name: str | None = None
+    industry: str | None = None
+    difficulty: str | None = None
 
 
 class KeyMoment(BaseModel):

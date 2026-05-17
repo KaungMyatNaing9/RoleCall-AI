@@ -1,4 +1,5 @@
 import random
+import uuid
 from app.models.persona import PersonaResponse
 from app.models.scenario import ScenarioResponse
 from app.models.rubric import RubricResponse, RubricItem
@@ -70,12 +71,151 @@ MOCK_RUBRIC = RubricResponse(
     ],
 )
 
+def _persona_from_prompt(prompt: str, industry: str) -> PersonaResponse:
+    """Build a rough persona from the free-text prompt so the mock never ignores what the user described."""
+    import re, uuid
+
+    lower = prompt.lower()
+
+    def _has_word(word: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(word)}\b", lower))
+
+    # --- role ---
+    role_map = [
+        (["teacher", "instructor", "professor", "educator"], "Teacher"),
+        (["student", "pupil", "learner"], "Student"),
+        (["parent", "guardian", "mother", "father", "mom", "dad"], "Parent"),
+        (["customer", "buyer", "shopper", "consumer"], "Customer"),
+        (["client", "account holder"], "Client"),
+        (["manager", "supervisor", "boss"], "Manager"),
+        (["recruiter", "hr", "interviewer", "hiring"], "Recruiter"),
+        (["employee", "worker", "staff"], "Employee"),
+        (["patient", "discharge", "hospital"], "Patient"),
+        (["caller"], "Caller"),
+    ]
+    role = f"{industry} participant"
+    for keywords, label in role_map:
+        if any(_has_word(kw) if " " not in kw else kw in lower for kw in keywords):
+            role = label
+            break
+
+    # --- mood ---
+    mood_map = [
+        (["angry", "furious", "rage", "outraged", "livid"], "angry"),
+        (["frustrated", "annoyed", "irritated"], "angry"),
+        (["worried", "anxious", "nervous", "scared", "fear"], "worried"),
+        (["confused", "lost", "unsure", "uncertain"], "confused"),
+        (["upset", "distressed", "sad"], "worried"),
+        (["happy", "excited", "cheerful", "upbeat"], "upbeat"),
+    ]
+    mood = "neutral"
+    for keywords, label in mood_map:
+        if any(kw in lower for kw in keywords):
+            mood = label
+            break
+
+    # --- age ---
+    age = 38
+    if any(kw in lower for kw in ("elderly", "old", "senior", "retired", "grandmother", "grandfather")):
+        age = 70
+    elif any(kw in lower for kw in ("young", "teen", "teenager", "college", "university", "student")):
+        age = 22
+    else:
+        m = re.search(r"\b(\d{2})\b", prompt)
+        if m:
+            parsed = int(m.group(1))
+            if 14 <= parsed <= 90:
+                age = parsed
+
+    # --- gender ---
+    gender = "unspecified"
+    if any(kw in lower for kw in ("woman", "female", "she", "her", "mother", "grandmother", "mrs", "ms")):
+        gender = "female"
+    elif any(kw in lower for kw in ("man", "male", "he", "his", "father", "grandfather", "mr")):
+        gender = "male"
+
+    # --- name ---
+    gender_names = {
+        "female": ["Sarah", "Laura", "Maria", "Jennifer"],
+        "male": ["James", "David", "Michael", "Robert"],
+        "unspecified": ["Alex", "Jordan", "Taylor", "Casey"],
+    }
+    name = gender_names[gender][hash(prompt) % 4]
+
+    # --- hidden concern ---
+    hidden_red_flag = None
+    if any(kw in lower for kw in ("hidden", "secret", "concern", "red flag", "issue", "problem")):
+        hidden_red_flag = "Has an underlying concern they will only reveal if directly asked or trust is established."
+
+    # --- traits ---
+    traits: list[str] = []
+    if "polite" in lower or "nice" in lower:
+        traits.append("polite")
+    if "direct" in lower or "blunt" in lower:
+        traits.append("direct")
+    if "hesitant" in lower or "shy" in lower:
+        traits.append("hesitant")
+    if not traits:
+        traits = ["direct", "realistic", "goal-oriented"]
+
+    # --- opening line ---
+    opening_line_map = {
+        "Teacher": f"Hi, I have a situation with one of my students I was hoping to get some guidance on.",
+        "Student": f"Hi, I'm struggling with something and wasn't sure who to talk to.",
+        "Parent": f"Hello, I'm calling about my child and I have some concerns I'd like to discuss.",
+        "Patient": f"Hi, I was just discharged and I'm a bit confused about what I'm supposed to do next.",
+        "Customer": f"Hi, I need some help with an issue I've been having.",
+        "Client": f"Hello, I have a question about my account that I really need resolved.",
+        "Manager": f"Hi, I wanted to talk through a personnel situation I'm dealing with.",
+        "Recruiter": f"Hello, I'm here for the interview — thanks for meeting with me.",
+        "Employee": f"Hi, I wanted to raise something that's been on my mind.",
+        "Caller": f"Hello, I'm calling because I need some assistance.",
+    }
+    opening_line = opening_line_map.get(role, f"Hi, I'm hoping you can help me with something.")
+
+    avatar_preset = "james" if gender == "male" else ("margaret" if age >= 60 else ("aanya" if gender == "female" and age < 30 else "elena"))
+
+    return PersonaResponse(
+        id=f"persona-mock-{uuid.uuid4().hex[:8]}",
+        name=name,
+        age=age,
+        gender=gender,
+        role=role,
+        mood=mood,
+        traits=traits[:3],
+        goal=f"Navigate this {industry.lower()} interaction and have their concern addressed.",
+        hidden_red_flag=hidden_red_flag,
+        behavior=f"Speaks naturally and responds to how the trainee approaches them.",
+        voice_style=f"Conversational, {'slightly anxious' if mood == 'worried' else mood if mood != 'neutral' else 'measured'} tone.",
+        opening_line=opening_line,
+        avatar_preset=avatar_preset,
+        sample_lines=[opening_line],
+    )
+
+
 def get_persona(prompt: str, industry: str) -> PersonaResponse:
-    return MARGARET_PERSONA
+    cleaned = prompt.strip()
+    if cleaned:
+        return _persona_from_prompt(cleaned, industry)
+    return MARGARET_PERSONA.model_copy(
+        update={"id": f"persona-mock-{uuid.uuid4().hex[:8]}"}
+    )
 
 
 def get_scenario(persona_id: str, industry: str) -> ScenarioResponse:
-    return MOCK_SCENARIO
+    # Return an empty-field scenario so _coerce_scenario fills in industry-appropriate defaults.
+    # Returning MOCK_SCENARIO here would bake in the healthcare title/description for all industries.
+    return ScenarioResponse(
+        id=f"scenario-mock-{uuid.uuid4().hex[:8]}",
+        title="",
+        description="",
+        your_role="",
+        duration="~5 min",
+        objective="",
+        success_condition="",
+        difficulty="Medium",
+        industry=industry,
+    )
 
 
 def get_rubric(scenario_id: str, industry: str, focus: list[str]) -> RubricResponse:

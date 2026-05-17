@@ -9,12 +9,16 @@ const DEFAULT_BACKEND_CANDIDATES = [
   "http://localhost:8001",
 ].filter(Boolean) as string[];
 
+const REQUIRED_FEATURES = ["persona_prompt", "voice_synthesize"];
+
 type BufferedUpstream = {
   status: number;
   statusText: string;
   contentType: string | null;
   body: ArrayBuffer;
 };
+
+let cachedCapableBackend: string | null = null;
 
 async function bufferUpstreamResponse(upstream: Response): Promise<BufferedUpstream> {
   return {
@@ -37,6 +41,44 @@ function responseFromBuffered(buffered: BufferedUpstream): Response {
   });
 }
 
+function normalizeBase(url: string) {
+  return url.replace(/\/$/, "");
+}
+
+async function backendHasRequiredFeatures(baseUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${normalizeBase(baseUrl)}/health`, { cache: "no-store" });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { features?: string[] };
+    const features = data.features ?? [];
+    return REQUIRED_FEATURES.every((feature) => features.includes(feature));
+  } catch {
+    return false;
+  }
+}
+
+async function orderedBackends(): Promise<string[]> {
+  if (cachedCapableBackend) {
+    return [
+      cachedCapableBackend,
+      ...DEFAULT_BACKEND_CANDIDATES.map(normalizeBase).filter((url) => url !== cachedCapableBackend),
+    ];
+  }
+
+  for (const baseUrl of DEFAULT_BACKEND_CANDIDATES) {
+    const normalized = normalizeBase(baseUrl);
+    if (await backendHasRequiredFeatures(normalized)) {
+      cachedCapableBackend = normalized;
+      return [
+        normalized,
+        ...DEFAULT_BACKEND_CANDIDATES.map(normalizeBase).filter((url) => url !== normalized),
+      ];
+    }
+  }
+
+  return DEFAULT_BACKEND_CANDIDATES.map(normalizeBase);
+}
+
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   const pathname = path.join("/");
@@ -49,8 +91,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   let lastError: unknown;
   let lastUpstream: BufferedUpstream | null = null;
 
-  for (const baseUrl of DEFAULT_BACKEND_CANDIDATES) {
-    const target = `${baseUrl.replace(/\/$/, "")}/${pathname}${query}`;
+  for (const baseUrl of await orderedBackends()) {
+    const target = `${baseUrl}/${pathname}${query}`;
     try {
       const upstream = await fetch(target, {
         method: request.method,
@@ -61,13 +103,13 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
         cache: "no-store",
       });
 
-      if (upstream.status >= 500) {
-        lastError = new Error(`Upstream ${upstream.status} from ${baseUrl}`);
-        lastUpstream = await bufferUpstreamResponse(upstream);
-        continue;
+      const buffered = await bufferUpstreamResponse(upstream);
+
+      if (upstream.ok) {
+        return responseFromBuffered(buffered);
       }
 
-      return responseFromBuffered(await bufferUpstreamResponse(upstream));
+      lastUpstream = buffered;
     } catch (error) {
       lastError = error;
     }

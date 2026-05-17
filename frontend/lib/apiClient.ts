@@ -29,7 +29,8 @@ async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
 }
 
 export const api = {
-  health: () => request<{ status: string; version: string }>("/health"),
+  health: () =>
+    request<{ status: string; version: string; features?: string[] }>("/health"),
 
   generatePersona: (body: object) =>
     request<PersonaResponse>("/personas/generate", { method: "POST", body: JSON.stringify(body) }),
@@ -39,12 +40,6 @@ export const api = {
 
   generateRubric: (body: object) =>
     request<RubricResponse>("/rubrics/generate", { method: "POST", body: JSON.stringify(body) }),
-
-  createAgent: (body: object) =>
-    request<CreateAgentResponse>("/simulations/create-agent", { method: "POST", body: JSON.stringify(body) }),
-
-  getSignedUrl: (agentId: string) =>
-    request<SignedUrlResponse>(`/simulations/signed-url/${agentId}`),
 
   getSessionTranscript: (sessionId: string) =>
     request<Array<{ speaker: string; text: string }>>(`/simulations/transcript/${sessionId}`),
@@ -213,14 +208,6 @@ export interface ModalityContribution {
   used_in_scoring: boolean;
   confidence_pct?: number;
   note?: string;
-}
-
-export interface CreateAgentResponse {
-  agent_id: string;
-}
-
-export interface SignedUrlResponse {
-  signed_url: string;
 }
 
 export interface EvaluationReport {

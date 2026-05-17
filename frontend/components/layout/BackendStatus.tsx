@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/apiClient";
 
+const REQUIRED_FEATURES = ["persona_prompt", "voice_synthesize"];
+
 export function BackendStatus({ compact = false }: { compact?: boolean }) {
-  const [state, setState] = useState<"loading" | "ok" | "error">("loading");
+  const [state, setState] = useState<"loading" | "ok" | "stale" | "error">("loading");
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -13,7 +15,9 @@ export function BackendStatus({ compact = false }: { compact?: boolean }) {
       .health()
       .then((payload) => {
         if (cancelled) return;
-        setState(payload.status === "ok" ? "ok" : "error");
+        const features = payload.features ?? [];
+        const capable = REQUIRED_FEATURES.every((feature) => features.includes(feature));
+        setState(payload.status === "ok" && capable ? "ok" : payload.status === "ok" ? "stale" : "error");
         setVersion(payload.version ?? null);
       })
       .catch(() => {
@@ -29,10 +33,12 @@ export function BackendStatus({ compact = false }: { compact?: boolean }) {
       ? "Checking API…"
       : state === "ok"
         ? `API online${version ? ` · v${version}` : ""}`
-        : "API offline — start the backend on port 8000";
+        : state === "stale"
+          ? "API outdated — restart the backend (port 8000)"
+          : "API offline — start the backend on port 8000";
 
   const color =
-    state === "ok" ? "#6EE7B7" : state === "error" ? "#FCA5A5" : "var(--ink-3)";
+    state === "ok" ? "#6EE7B7" : state === "stale" ? "#FCD34D" : state === "error" ? "#FCA5A5" : "var(--ink-3)";
 
   if (compact) {
     return (

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Response
 
+from app.config import settings
 from app.models.voice import VoiceSynthesisRequest
 from app.services import voice_service
 
@@ -15,4 +16,5 @@ async def synthesize_voice(req: VoiceSynthesisRequest):
         persona_id=req.persona_id,
         persona_name=req.persona_name,
     )
-    return Response(content=audio, media_type="audio/mpeg")
+    media_type = "audio/mpeg" if settings.elevenlabs_api_key else "audio/wav"
+    return Response(content=audio, media_type=media_type)

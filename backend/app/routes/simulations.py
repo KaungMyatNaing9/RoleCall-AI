@@ -19,6 +19,8 @@ async def simulation_respond(req: SimulationRespondRequest):
         persona_id=req.persona_id,
         scenario_id=req.scenario_id,
         mode=req.mode,
+        inline_persona=req.persona,
+        inline_scenario=req.scenario,
     )
 
 

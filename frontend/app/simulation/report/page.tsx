@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { useSimulationStore } from "@/stores/simulationStore";
+import { Icons } from "@/components/icons";
 import { PRIVACY_NOTICE } from "@/lib/constants";
 
 const TAG_COLORS: Record<string, string> = {

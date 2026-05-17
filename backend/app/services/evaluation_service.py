@@ -697,15 +697,18 @@ async def generate_evaluation(
     scenario_id: str,
     rubric_id: str,
     mode: str,
+    persona_name_fallback: str | None = None,
+    industry_fallback: str | None = None,
+    difficulty_fallback: str | None = None,
 ) -> EvaluationReport:
     history = simulation_service.SESSION_STORE.get(session_id, {}).get("history", [])
     persona = persona_service.PERSONA_STORE.get(persona_id)
     scenario = persona_service.SCENARIO_STORE.get(scenario_id, {})
     rubric = persona_service.RUBRIC_STORE.get(rubric_id)
 
-    persona_name = persona.name if persona else "the caller"
-    industry = scenario.get("industry", "Healthcare")
-    difficulty = scenario.get("difficulty", "Medium")
+    persona_name = (persona.name if persona else None) or persona_name_fallback or "the caller"
+    industry = scenario.get("industry") or industry_fallback or "Healthcare"
+    difficulty = scenario.get("difficulty") or difficulty_fallback or "Medium"
 
     if rubric:
         rubric_items = rubric.items

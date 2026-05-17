@@ -46,13 +46,20 @@ declare global {
 
 interface SpeechRecognitionOptions {
   onFinalTranscript: (text: string) => void;
+  /** Milliseconds of silence after speech before auto-submitting. 0 = disabled. */
+  silenceTimeoutMs?: number;
 }
 
-export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecognitionOptions) {
+export function useBrowserSpeechRecognition({
+  onFinalTranscript,
+  silenceTimeoutMs = 0,
+}: SpeechRecognitionOptions) {
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const finalTranscriptRef = useRef("");
   const manualStopRef = useRef(false);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSpokenRef = useRef(false);
 
   const [isSupported, setIsSupported] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -63,6 +70,13 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
     setIsSupported(supportsBrowserDictation());
   }, []);
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
   const stopTracks = useCallback(() => {
     if (!streamRef.current) return;
     streamRef.current.getTracks().forEach((track) => track.stop());
@@ -70,10 +84,11 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
   }, []);
 
   const stopListening = useCallback(() => {
+    clearSilenceTimer();
     manualStopRef.current = true;
     recognitionRef.current?.stop();
     stopTracks();
-  }, [stopTracks]);
+  }, [clearSilenceTimer, stopTracks]);
 
   const startListening = useCallback(async () => {
     if (!supportsBrowserDictation()) {
@@ -90,6 +105,7 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
     try {
       setErrorMessage("");
       manualStopRef.current = false;
+      hasSpokenRef.current = false;
       finalTranscriptRef.current = "";
       setInterimTranscript("");
 
@@ -102,7 +118,7 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
       }
 
       const recognition = new Recognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
@@ -125,6 +141,20 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
           finalTranscriptRef.current = `${finalTranscriptRef.current} ${finalText}`.trim();
         }
         setInterimTranscript(`${finalTranscriptRef.current} ${interimText}`.trim());
+
+        // Track that the user has spoken and reset the silence timer
+        const hasContent = Boolean(finalTranscriptRef.current || interimText);
+        if (hasContent) {
+          hasSpokenRef.current = true;
+          if (silenceTimeoutMs > 0) {
+            clearSilenceTimer();
+            silenceTimerRef.current = setTimeout(() => {
+              // Calling stop() lets the browser finalize interim speech,
+              // then fires onend → onFinalTranscript as normal.
+              recognitionRef.current?.stop();
+            }, silenceTimeoutMs);
+          }
+        }
       };
 
       recognition.onerror = (event) => {
@@ -134,13 +164,17 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
       };
 
       recognition.onend = () => {
+        clearSilenceTimer();
         setIsListening(false);
         stopTracks();
         const text = finalTranscriptRef.current.trim();
         setInterimTranscript(text);
-        if (!manualStopRef.current && text) {
+        if (text) {
           onFinalTranscript(text);
+          finalTranscriptRef.current = "";
         }
+        manualStopRef.current = false;
+        hasSpokenRef.current = false;
       };
 
       recognitionRef.current = recognition;
@@ -150,14 +184,15 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
       stopTracks();
       setErrorMessage(error instanceof Error ? error.message : "Microphone access failed.");
     }
-  }, [onFinalTranscript, stopTracks]);
+  }, [clearSilenceTimer, onFinalTranscript, silenceTimeoutMs, stopTracks]);
 
   useEffect(
     () => () => {
+      clearSilenceTimer();
       recognitionRef.current?.stop();
       stopTracks();
     },
-    [stopTracks],
+    [clearSilenceTimer, stopTracks],
   );
 
   const clearTranscript = useCallback(() => setInterimTranscript(""), []);

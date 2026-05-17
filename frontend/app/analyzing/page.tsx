@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { api } from "@/lib/apiClient";
+import { cameraStreamRef } from "@/lib/cameraStream";
 import { finalizeSessionSignals } from "@/lib/finalizeSession";
 
 export default function AnalyzingPage() {
@@ -14,10 +15,16 @@ export default function AnalyzingPage() {
   storeRef.current = store;
 
   useEffect(() => {
+    cameraStreamRef.stop();
+
     const s = storeRef.current;
     const sessionId = s.simulationId || `session-${Date.now()}`;
 
     async function run() {
+      if (!s.persona?.id || !s.scenario?.id || !s.rubric?.id) {
+        throw new Error("Missing generated simulation data.");
+      }
+
       let transcript = s.transcript.map((entry) => ({
         speaker: entry.speaker,
         text: entry.text,
@@ -62,11 +69,14 @@ export default function AnalyzingPage() {
 
       return api.generateEvaluation({
         session_id: sessionId,
-        persona_id: s.persona?.id ?? "persona-margaret-001",
-        scenario_id: s.scenario?.id ?? "scenario-postdischarge-001",
-        rubric_id: s.rubric?.id ?? "rubric-healthcare-001",
+        persona_id: s.persona.id,
+        scenario_id: s.scenario.id,
+        rubric_id: s.rubric.id,
         mode: s.mode ?? "video",
         transcript,
+        persona_name: s.persona.name,
+        industry: s.scenario.industry,
+        difficulty: s.scenario.difficulty,
       });
     }
 

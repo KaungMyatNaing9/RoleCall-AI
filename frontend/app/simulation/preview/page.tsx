@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
@@ -18,12 +19,6 @@ const MODE_OPTIONS = [
 
 type ModeId = (typeof MODE_OPTIONS)[number]["id"];
 
-const MOCK_LOG: Array<{ agent: string; color: string; message: string }> = [
-  { agent: "Persona Agent", color: "#2DD4BF", message: "Generated persona from prompt" },
-  { agent: "Scenario Agent", color: "#8B7DFB", message: "Built scenario for selected industry" },
-  { agent: "Rubric Agent", color: "#FCD34D", message: "Compiled evaluation criteria" },
-];
-
 export default function PreviewPage() {
   const router = useRouter();
   const { persona, scenario, rubric, mode, agentLog, evaluationFocus, setMode, setRubric } = useSimulationStore();
@@ -34,30 +29,39 @@ export default function PreviewPage() {
   const [isRefreshingRubric, setIsRefreshingRubric] = useState(false);
   const [rubricError, setRubricError] = useState("");
 
-  const p = persona || {
-    id: "persona-margaret-001",
-    name: "Margaret Lewis", age: 72, role: "Post-discharge patient", mood: "worried",
-    traits: ["polite", "hesitant", "apologetic"], goal: "Understand new medication instructions",
-    hidden_red_flag: "Chest tightness — reveals only if asked about symptoms or after ~2 min",
-    behavior: "Apologetic, asks to repeat, easily distracted",
-    voice_style: "Elderly, calm, slightly anxious — light tremor",
-    opening_line: "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
-    avatar_preset: "margaret",
-    sample_lines: [],
-  };
-  const s = scenario || { title: "Post-surgery follow-up call", description: "Margaret was discharged 36 hours ago. She'll call confused about her medication, but her real concern (chest tightness) only surfaces if you ask the right questions.", your_role: "Care coordinator", duration: "~5 min", objective: "Verify ID, identify urgent concerns, escalate", success_condition: "Patient is safely escalated", difficulty: "Medium" };
-  const r = rubric || { items: [
-    { name: "Identity verification", weight: 10, is_hot: false },
-    { name: "Empathy", weight: 18, is_hot: false },
-    { name: "Question quality", weight: 14, is_hot: false },
-    { name: "Red-flag detection", weight: 20, is_hot: true },
-    { name: "Escalation handling", weight: 18, is_hot: true },
-    { name: "Clarity of next steps", weight: 10, is_hot: false },
-    { name: "Nonverbal engagement", weight: 10, is_hot: false },
-  ]};
+  if (!persona || !scenario || !rubric) {
+    return (
+      <AppShell>
+        <TopNav active="Simulations" compact />
+        <main style={{ flex: 1, display: "grid", placeItems: "center", padding: 28 }}>
+          <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
+              <Icons.warn size={24} />
+            </div>
+            <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>Simulation data is missing</h1>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+              This preview now requires a real generated persona, scenario, and rubric. Generate a new simulation instead of falling back to demo content.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+              <Link href="/dashboard"><button className="rc-btn ghost">Back to dashboard</button></Link>
+              <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Generate simulation</button></Link>
+            </div>
+          </div>
+        </main>
+      </AppShell>
+    );
+  }
+
+  const p = persona;
+  const s = scenario;
+  const r = rubric;
   const resolvedMode: ModeId = (mode as ModeId) || "video";
   const selectedModeOption = MODE_OPTIONS.find((option) => option.id === resolvedMode) || MODE_OPTIONS[2];
-  const resolvedAgentLog = agentLog.length ? agentLog : MOCK_LOG;
+  const resolvedAgentLog = agentLog.length ? agentLog : [
+    { agent: "Persona Generator", color: "#2DD4BF", message: `Generated ${persona.name} for ${scenario.industry}.` },
+    { agent: "Scenario Builder", color: "#8B7DFB", message: `${scenario.title} · ${scenario.difficulty}.` },
+    { agent: "Rubric Agent", color: "#FCD34D", message: `Prepared ${rubric.items.length} real evaluation criteria.` },
+  ];
   const openingLineDuration = Math.max(3, Math.round(p.opening_line.split(" ").length / 2.8));
   const modeSpecificAdds: string[] = [...(MODE_SPECIFIC_EVALUATION_CRITERIA[resolvedMode] ?? [])];
   const modeSpecificRemovals: string[] = Array.from(
