@@ -243,25 +243,7 @@ function CallPageInner() {
   const setSimulationId = useSimulationStore((s) => s.setSimulationId);
   const startCall = useSimulationStore((s) => s.startCall);
 
-  if (!store.persona || !store.scenario || !store.rubric) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "grid", placeItems: "center", padding: 28 }}>
-        <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
-            <Icons.warn size={24} />
-          </div>
-          <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>Call session data is missing</h1>
-          <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
-            The live simulation page now requires a real generated persona, scenario, and rubric. Start again from preview instead of falling back to demo content.
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-            <Link href="/simulation/preview"><button className="rc-btn ghost">Back to preview</button></Link>
-            <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Generate simulation</button></Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const persona = store.persona;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -270,6 +252,8 @@ function CallPageInner() {
   const stopListeningRef = useRef<() => void>(() => {});
   const startTimeRef = useRef(Date.now());
   const sessionIdRef = useRef(store.simulationId || `session-${Date.now()}`);
+  const transcriptLengthRef = useRef(0);
+  const userSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [elapsed, setElapsed] = useState(0);
   const [visibleTranscript, setVisibleTranscript] = useState<TranscriptEntry[]>([]);
@@ -281,9 +265,6 @@ function CallPageInner() {
   const [errorMessage, setErrorMessage] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [hasVideoStream, setHasVideoStream] = useState(false);
-  const autoMicStartedRef = useRef(false);
-
-  const persona = store.persona;
 
   const mode = store.mode || "video";
   const isVideoMode = mode === "video";
@@ -359,9 +340,9 @@ function CallPageInner() {
 
       const blob = await api.synthesizeVoice({
         text,
-        persona_id: persona.id,
-        persona_name: persona.name,
-        voice_style: persona.voice_style,
+        persona_id: persona!.id,
+        persona_name: persona!.name,
+        voice_style: persona!.voice_style,
       });
 
       if (blob.size < 256) {
@@ -401,7 +382,7 @@ function CallPageInner() {
         setVoiceError("Voice playback unavailable. Read the transcript on screen.");
       }
     }
-  }, [isTextMode, persona.id, persona.name, persona.voice_style, store.isMuted]);
+  }, [isTextMode, persona?.id, persona?.name, persona?.voice_style, store.isMuted]);
 
   const requestPersonaReply = useCallback(async (userMessage: string, turnIndex: number) => {
     setIsWaitingReply(true);
@@ -465,6 +446,7 @@ function CallPageInner() {
     stopListening,
     clearTranscript,
   } = useBrowserSpeechRecognition({
+    silenceTimeoutMs: 5000,
     onFinalTranscript: (text) => {
       setDraftReply(text);
       void submitUserTurn(text);
@@ -557,14 +539,26 @@ function CallPageInner() {
     void requestPersonaReply("", 0);
   }, [needsMediaGate, mediaPrecallReady, requestPersonaReply, setSimulationId, startCall]);
 
+  // Keep a always-current ref so setTimeout closures get the right turn index
   useEffect(() => {
-    if (isTextMode || autoMicStartedRef.current || !speechSupported || store.isMuted) return;
-    if (!sessionStartedRef.current || isWaitingReply || isPlayingVoice) return;
-    if (visibleTranscript.length === 0) return;
+    transcriptLengthRef.current = visibleTranscript.length;
+  }, [visibleTranscript.length]);
 
-    autoMicStartedRef.current = true;
+  // Stop mic immediately when persona starts speaking (avoid feedback / overlap)
+  useEffect(() => {
+    if (isPlayingVoice && isListening) {
+      stopListening();
+    }
+  }, [isPlayingVoice, isListening, stopListening]);
+
+  // Auto-restart mic after persona finishes speaking or when session is idle
+  useEffect(() => {
+    if (isTextMode || !speechSupported || store.isMuted) return;
+    if (!sessionStartedRef.current || visibleTranscript.length === 0) return;
+    if (isPlayingVoice || isWaitingReply || isListening) return;
     void startListening();
   }, [
+    isListening,
     isPlayingVoice,
     isTextMode,
     isWaitingReply,
@@ -573,6 +567,29 @@ function CallPageInner() {
     store.isMuted,
     visibleTranscript.length,
   ]);
+
+  // Persona prompts the user after 8 s of complete silence (mic open, nothing said)
+  useEffect(() => {
+    if (isTextMode || !isListening || isWaitingReply || isPlayingVoice || interimTranscript.trim()) {
+      if (userSilenceTimerRef.current !== null) {
+        clearTimeout(userSilenceTimerRef.current);
+        userSilenceTimerRef.current = null;
+      }
+      return;
+    }
+
+    userSilenceTimerRef.current = setTimeout(() => {
+      userSilenceTimerRef.current = null;
+      void requestPersonaReply("[SILENCE]", transcriptLengthRef.current + 1);
+    }, 8000);
+
+    return () => {
+      if (userSilenceTimerRef.current !== null) {
+        clearTimeout(userSilenceTimerRef.current);
+        userSilenceTimerRef.current = null;
+      }
+    };
+  }, [interimTranscript, isListening, isPlayingVoice, isTextMode, isWaitingReply, requestPersonaReply]);
 
   const handleSend = useCallback(async () => {
     await submitUserTurn(draftReply);
@@ -588,11 +605,35 @@ function CallPageInner() {
     void goToAnalyzing();
   }, [goToAnalyzing]);
 
+  if (!persona || !store.scenario || !store.rubric) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "grid", placeItems: "center", padding: 28 }}>
+        <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+          <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
+            <Icons.warn size={24} />
+          </div>
+          <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>Call session data is missing</h1>
+          <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+            The live simulation page now requires a real generated persona, scenario, and rubric. Start again from preview instead of falling back to demo content.
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+            <Link href="/simulation/preview"><button className="rc-btn ghost">Back to preview</button></Link>
+            <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Generate simulation</button></Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const composerHint = isTextMode
     ? "Type your next message..."
     : isListening
-      ? "Listening through your browser microphone..."
-      : "Type or dictate what the trainee says next...";
+      ? "Speaking… (mic is live)"
+      : isPlayingVoice
+        ? "Agent is speaking — mic will activate automatically when done"
+        : isWaitingReply
+          ? "Waiting for agent response…"
+          : "Mic activates automatically after the agent speaks";
 
   const criticalResponse = liveCoaching?.suggested_response
     || (persona.hidden_red_flag
@@ -743,10 +784,11 @@ function CallPageInner() {
                   placeholder={composerHint}
                   style={{ width: "100%", minHeight: 64, resize: "none", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: 14, color: "var(--ink-0)", padding: "12px 14px", fontSize: 13, outline: "none", opacity: isListening ? 0.85 : 1 }}
                 />
-                <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
-                  {!isTextMode && (
-                    <span style={{ color: isListening ? "#5EEAD4" : "var(--ink-3)" }}>
-                      {isListening ? "Mic live: browser speech recognition is capturing your turn." : "Voice modes can use typed input or browser dictation."}
+                <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 11, color: "var(--ink-3)", alignItems: "center" }}>
+                  {!isTextMode && speechSupported && (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, color: isListening ? "#5EEAD4" : isPlayingVoice ? "#FCD34D" : isWaitingReply ? "#B5ACFD" : "var(--ink-3)" }}>
+                      {isListening && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#5EEAD4", display: "inline-block", animation: "rc-pulse 1s ease-in-out infinite" }} />}
+                      {isListening ? "Listening — speak now" : isPlayingVoice ? "Agent is speaking…" : isWaitingReply ? "Processing response…" : "Waiting for agent reply"}
                     </span>
                   )}
                   {!isTextMode && !speechSupported && (
@@ -755,11 +797,6 @@ function CallPageInner() {
                   {!isTextMode && speechError && <span style={{ color: "#FCA5A5" }}>{speechError}</span>}
                 </div>
               </div>
-              {!isTextMode && (
-                <button className="rc-btn" disabled={!speechSupported || isWaitingReply} onClick={isListening ? stopListening : startListening}>
-                  {isListening ? <><Icons.pause size={14} /> Stop mic</> : <><Icons.mic size={14} /> Start mic</>}
-                </button>
-              )}
               <button className="rc-btn primary" disabled={isWaitingReply || !draftReply.trim()} onClick={handleSend}>
                 {isWaitingReply ? <><span style={{ width: 12, height: 12, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Waiting</> : <><Icons.chat size={14} /> Send</>}
               </button>
@@ -772,7 +809,7 @@ function CallPageInner() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", borderRadius: 18, backdropFilter: "blur(20px)", boxShadow: "0 14px 40px -10px rgba(0,0,0,0.7)" }}>
               <CtrlBtn
                 icon={store.isMuted ? <Icons.micOff size={18} /> : <Icons.mic size={18} />}
-                label={store.isMuted ? "Unmute" : isListening ? "Mic live" : "Mute"}
+                label={store.isMuted ? "Unmute" : isListening ? "Listening" : "Mute"}
                 onClick={handleToggleMute}
                 tone={store.isMuted ? "amber" : isListening && !store.isMuted ? "teal" : undefined}
               />
