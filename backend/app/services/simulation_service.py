@@ -436,7 +436,9 @@ async def _generate_reply(
     phase_state: dict[str, Any],
 ) -> dict[str, Any]:
     if not settings.openai_api_key and not settings.anthropic_api_key:
-        return {"text": mock_service.get_next_turn("demo", len(history), user_message).entry.text, "should_end_call": False}
+        sample_lines = persona.sample_lines or [persona.opening_line]
+        idx = min(len(history) // 2, len(sample_lines) - 1)
+        return {"text": sample_lines[idx], "should_end_call": len(history) >= len(sample_lines) * 2}
 
     history_lines = "\n".join(f"{item['speaker'].upper()}: {item['text']}" for item in history[-12:])
     user_prompt = build_simulation_agent_prompt(

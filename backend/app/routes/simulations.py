@@ -1,10 +1,13 @@
 import asyncio
 from fastapi import APIRouter
 from app.models.simulation import (
+    CreateAgentRequest,
+    CreateAgentResponse,
+    SignedUrlResponse,
     SimulationRespondRequest,
     SimulationTurn,
 )
-from app.services import simulation_service
+from app.services import simulation_service, elevenlabs_agent_service
 
 router = APIRouter()
 
@@ -25,3 +28,15 @@ async def simulation_respond(req: SimulationRespondRequest):
 @router.get("/transcript/{session_id}")
 async def get_transcript(session_id: str):
     return simulation_service.get_full_transcript(session_id)
+
+
+@router.post("/create-agent", response_model=CreateAgentResponse)
+async def create_agent(req: CreateAgentRequest):
+    agent_id = await elevenlabs_agent_service.create_agent(req)
+    return CreateAgentResponse(agent_id=agent_id)
+
+
+@router.get("/signed-url/{agent_id}", response_model=SignedUrlResponse)
+async def get_signed_url(agent_id: str):
+    signed_url = await elevenlabs_agent_service.get_signed_url(agent_id)
+    return SignedUrlResponse(signed_url=signed_url)
