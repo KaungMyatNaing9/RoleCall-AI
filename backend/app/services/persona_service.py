@@ -7,6 +7,14 @@ from urllib import error, request
 
 from app.config import settings
 from app.models.persona import PersonaResponse
+from app.prompts.persona_prompt import (
+    PERSONA_AGENT_SYSTEM_PROMPT,
+    build_persona_agent_prompt,
+)
+from app.prompts.scenario_prompt import (
+    SCENARIO_AGENT_SYSTEM_PROMPT,
+    build_scenario_agent_prompt,
+)
 from app.services import mock_service
 
 
@@ -14,28 +22,138 @@ PERSONA_STORE: dict[str, PersonaResponse] = {}
 SCENARIO_STORE: dict[str, dict[str, Any]] = {}
 RUBRIC_STORE: dict[str, Any] = {}
 
-OPENAI_PERSONA_SYSTEM = """You generate realistic training personas for RoleCall AI.
-Return JSON only with keys:
-name, age, role, mood, traits, goal, hidden_red_flag, behavior, voice_style, opening_line, sample_lines.
+def _normalize_sliders(behavior_sliders: dict[str, float] | None) -> dict[str, float]:
+    sliders = behavior_sliders or {}
+    defaults = {
+        "emotional_intensity": 0.4,
+        "interruptions": 0.25,
+        "hidden_agenda": 0.6,
+        "patience": 0.7,
+        "escalation_risk": 0.55,
+    }
+    normalized: dict[str, float] = {}
+    for key, fallback in defaults.items():
+        try:
+            normalized[key] = max(0.0, min(1.0, float(sliders.get(key, fallback))))
+        except (TypeError, ValueError):
+            normalized[key] = fallback
+    return normalized
 
-Rules:
-- Make the persona specific and believable.
-- Fit the requested industry and difficulty.
-- `traits` must be an array of 3 short strings.
-- `sample_lines` must be an array of 6 to 8 lines in the persona's voice.
-- If a safety-sensitive red flag exists, phrase it as something the persona says or reveals later.
-- Avoid unsupported claims about emotion detection, truthfulness, or mental state.
-"""
 
-OPENAI_SCENARIO_SYSTEM = """You generate structured conversation-practice scenarios for RoleCall AI.
-Return JSON only with keys:
-title, description, your_role, duration, objective, success_condition, difficulty, industry.
+def _format_behavior_controls(behavior_sliders: dict[str, float], behavior_toggles: dict[str, bool] | None) -> str:
+    toggles = behavior_toggles or {}
+    slider_labels = {
+        "emotional_intensity": "Emotional intensity",
+        "interruptions": "Interruptions",
+        "hidden_agenda": "Hidden agenda",
+        "patience": "Patience level",
+        "escalation_risk": "Escalation risk",
+    }
+    lines = [f"- {slider_labels[key]}: {round(value * 100)} / 100" for key, value in behavior_sliders.items()]
+    for key, value in sorted(toggles.items()):
+        lines.append(f"- {key.replace('_', ' ').title()}: {'enabled' if value else 'disabled'}")
+    return "\n".join(lines)
 
-Rules:
-- Keep description to 2 sentences max.
-- Match the provided persona and training context.
-- Make success_condition concrete and observable.
-"""
+
+def _apply_persona_controls(
+    persona: PersonaResponse,
+    behavior_sliders: dict[str, float],
+    behavior_toggles: dict[str, bool] | None,
+) -> PersonaResponse:
+    toggles = behavior_toggles or {}
+    emotional_intensity = behavior_sliders["emotional_intensity"]
+    interruptions = behavior_sliders["interruptions"]
+    hidden_agenda = behavior_sliders["hidden_agenda"]
+    patience = behavior_sliders["patience"]
+    escalation_risk = behavior_sliders["escalation_risk"]
+
+    mood = persona.mood
+    if emotional_intensity >= 0.78 and mood == "neutral":
+        mood = "upset"
+    elif emotional_intensity >= 0.65 and mood == "neutral":
+        mood = "anxious"
+
+    behavior_parts = [persona.behavior.rstrip(".")]
+    if interruptions >= 0.65:
+        behavior_parts.append("tends to interrupt or jump back to the main concern")
+    elif interruptions <= 0.2:
+        behavior_parts.append("waits for the trainee to finish before responding")
+    if patience <= 0.35:
+        behavior_parts.append("loses patience quickly if the trainee sounds vague")
+    elif patience >= 0.82:
+        behavior_parts.append("stays patient if the trainee explains clearly")
+    if hidden_agenda >= 0.65:
+        behavior_parts.append("holds back a key concern until trust is established")
+    if escalation_risk >= 0.7:
+        behavior_parts.append("carries a higher-risk issue that should shift the conversation into escalation or safety planning")
+    if toggles.get("random_surprise", False):
+        behavior_parts.append("may add one unexpected detail that tests composure")
+
+    hidden_red_flag = persona.hidden_red_flag
+    if not toggles.get("hidden_red_flag", True):
+        hidden_red_flag = None
+    elif escalation_risk >= 0.75 and not hidden_red_flag:
+        hidden_red_flag = "Reveals a safety-sensitive concern only after the trainee asks a focused follow-up."
+
+    voice_style = persona.voice_style.rstrip(".")
+    if toggles.get("light_accent", False):
+        voice_style = f"{voice_style}; slight regional accent"
+    if emotional_intensity >= 0.72:
+        voice_style = f"{voice_style}; more emotionally charged delivery"
+    elif patience >= 0.82:
+        voice_style = f"{voice_style}; steady and measured pacing"
+
+    sample_lines = persona.sample_lines[:]
+    if interruptions >= 0.65 and sample_lines:
+        sample_lines[0] = f"{sample_lines[0].rstrip('.')} and I need to understand this now."
+
+    return persona.model_copy(
+        update={
+            "mood": mood,
+            "behavior": ". ".join(dict.fromkeys(behavior_parts)).strip(".") + ".",
+            "hidden_red_flag": hidden_red_flag,
+            "voice_style": voice_style + ".",
+            "sample_lines": sample_lines,
+        }
+    )
+
+
+def _apply_scenario_controls(
+    payload: dict[str, Any],
+    persona: PersonaResponse | None,
+    behavior_sliders: dict[str, float],
+    behavior_toggles: dict[str, bool] | None,
+) -> dict[str, Any]:
+    toggles = behavior_toggles or {}
+    escalation_risk = behavior_sliders["escalation_risk"]
+    hidden_agenda = behavior_sliders["hidden_agenda"]
+    interruptions = behavior_sliders["interruptions"]
+    patience = behavior_sliders["patience"]
+
+    description_parts = [str(payload["description"]).rstrip(".")]
+    objective_parts = [str(payload["objective"]).rstrip(".")]
+    success_parts = [str(payload["success_condition"]).rstrip(".")]
+
+    if hidden_agenda >= 0.65:
+        description_parts.append("A key concern is intentionally held back until the trainee builds trust or asks more precisely")
+    if interruptions >= 0.6:
+        description_parts.append("The conversation includes frequent redirections or interruptions from the persona")
+    if patience <= 0.35:
+        description_parts.append("The trainee must regain control quickly before the conversation deteriorates")
+    if toggles.get("random_surprise", False):
+        description_parts.append("An unexpected detail may surface mid-conversation and force the trainee to adapt")
+    if escalation_risk >= 0.7:
+        objective_parts.append("Recognize the higher-risk cue early and shift into escalation or urgent next-step planning")
+        success_parts.append("The trainee identifies the risk cue and responds with a safe escalation path")
+    if not toggles.get("hidden_red_flag", True):
+        success_parts.append("The trainee still closes with a clear summary and next step even without a hidden red flag reveal")
+    if persona and persona.hidden_red_flag:
+        success_parts.append(f"The trainee responds appropriately if {persona.name} reveals: {persona.hidden_red_flag}")
+
+    payload["description"] = ". ".join(dict.fromkeys(description_parts)).strip(".") + "."
+    payload["objective"] = ". ".join(dict.fromkeys(objective_parts)).strip(".") + "."
+    payload["success_condition"] = ". ".join(dict.fromkeys(success_parts)).strip(".") + "."
+    return payload
 
 
 def _strip_json_block(text: str) -> str:
@@ -72,6 +190,22 @@ def _avatar_preset_for_persona(role: str, mood: str, age: int, name: str) -> str
     return "elena"
 
 
+def _normalize_gender(value: str | None, name: str, voice_style: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in {"female", "male", "nonbinary", "unspecified"}:
+        return normalized
+
+    fallback = f"{name} {voice_style}".lower()
+    female_hints = (" she ", " her ", " woman", " female", " mother", " grandmother", " mrs", " ms", " girl")
+    male_hints = (" he ", " his ", " man", " male", " father", " grandfather", " mr", " boy")
+    padded = f" {fallback} "
+    if any(hint in padded for hint in female_hints):
+        return "female"
+    if any(hint in padded for hint in male_hints):
+        return "male"
+    return "unspecified"
+
+
 def _coerce_persona(payload: dict[str, Any], industry: str) -> PersonaResponse:
     name = str(payload.get("name") or "Generated Persona").strip()
     age = int(payload.get("age") or 35)
@@ -94,6 +228,7 @@ def _coerce_persona(payload: dict[str, Any], industry: str) -> PersonaResponse:
         id=f"persona-{uuid.uuid4().hex[:10]}",
         name=name,
         age=age,
+        gender=_normalize_gender(payload.get("gender"), name, voice_style),
         role=role,
         mood=mood,
         traits=traits,
@@ -207,58 +342,72 @@ async def _anthropic_json(system_prompt: str, user_prompt: str) -> dict[str, Any
     return await asyncio.to_thread(_anthropic_json_sync, system_prompt, user_prompt)
 
 
-async def generate_persona(prompt: str, industry: str, difficulty: str) -> PersonaResponse:
-    user_prompt = (
-        f"Industry: {industry}\n"
-        f"Difficulty: {difficulty}\n"
-        f"Prompt: {prompt}\n\n"
-        "Create a realistic simulation persona for a browser voice or video roleplay."
+async def generate_persona(
+    prompt: str,
+    industry: str,
+    difficulty: str,
+    behavior_sliders: dict[str, float] | None = None,
+    behavior_toggles: dict[str, bool] | None = None,
+) -> PersonaResponse:
+    normalized_sliders = _normalize_sliders(behavior_sliders)
+    user_prompt = build_persona_agent_prompt(
+        prompt=prompt,
+        industry=industry,
+        difficulty=difficulty,
+        behavior_controls=_format_behavior_controls(normalized_sliders, behavior_toggles),
     )
 
     try:
         if settings.openai_api_key:
-            persona = _coerce_persona(await _openai_json(OPENAI_PERSONA_SYSTEM, user_prompt), industry)
+            persona = _coerce_persona(await _openai_json(PERSONA_AGENT_SYSTEM_PROMPT, user_prompt), industry)
         elif settings.anthropic_api_key:
-            persona = _coerce_persona(await _anthropic_json(OPENAI_PERSONA_SYSTEM, user_prompt), industry)
+            persona = _coerce_persona(await _anthropic_json(PERSONA_AGENT_SYSTEM_PROMPT, user_prompt), industry)
         else:
             persona = mock_service.get_persona(prompt, industry)
     except Exception:
         persona = mock_service.get_persona(prompt, industry)
 
+    persona = _apply_persona_controls(persona, normalized_sliders, behavior_toggles)
     PERSONA_STORE[persona.id] = persona
     return persona
 
 
-async def generate_scenario(persona_id: str, industry: str, difficulty: str, mode: str) -> dict[str, Any]:
+async def generate_scenario(
+    persona_id: str,
+    industry: str,
+    difficulty: str,
+    mode: str,
+    behavior_sliders: dict[str, float] | None = None,
+    behavior_toggles: dict[str, bool] | None = None,
+) -> dict[str, Any]:
+    normalized_sliders = _normalize_sliders(behavior_sliders)
     persona = PERSONA_STORE.get(persona_id)
     if not persona:
         scenario = mock_service.get_scenario(persona_id, industry)
         payload = _coerce_scenario(scenario.model_dump(), industry, difficulty, mode, None)
+        payload = _apply_scenario_controls(payload, None, normalized_sliders, behavior_toggles)
         SCENARIO_STORE[payload["id"]] = payload
         return payload
 
-    user_prompt = (
-        f"Industry: {industry}\n"
-        f"Difficulty: {difficulty}\n"
-        f"Mode: {mode}\n"
-        f"Persona name: {persona.name}\n"
-        f"Persona role: {persona.role}\n"
-        f"Persona goal: {persona.goal}\n"
-        f"Persona behavior: {persona.behavior}\n"
-        f"Hidden red flag: {persona.hidden_red_flag or 'none'}\n"
-        f"Opening line: {persona.opening_line}\n"
+    user_prompt = build_scenario_agent_prompt(
+        persona=persona,
+        industry=industry,
+        difficulty=difficulty,
+        mode=mode,
+        behavior_controls=_format_behavior_controls(normalized_sliders, behavior_toggles),
     )
 
     try:
         if settings.openai_api_key:
-            payload = _coerce_scenario(await _openai_json(OPENAI_SCENARIO_SYSTEM, user_prompt), industry, difficulty, mode, persona)
+            payload = _coerce_scenario(await _openai_json(SCENARIO_AGENT_SYSTEM_PROMPT, user_prompt), industry, difficulty, mode, persona)
         elif settings.anthropic_api_key:
-            payload = _coerce_scenario(await _anthropic_json(OPENAI_SCENARIO_SYSTEM, user_prompt), industry, difficulty, mode, persona)
+            payload = _coerce_scenario(await _anthropic_json(SCENARIO_AGENT_SYSTEM_PROMPT, user_prompt), industry, difficulty, mode, persona)
         else:
             payload = _coerce_scenario(mock_service.get_scenario(persona_id, industry).model_dump(), industry, difficulty, mode, persona)
     except Exception:
         payload = _coerce_scenario(mock_service.get_scenario(persona_id, industry).model_dump(), industry, difficulty, mode, persona)
 
+    payload = _apply_scenario_controls(payload, persona, normalized_sliders, behavior_toggles)
     SCENARIO_STORE[payload["id"]] = payload
     return payload
 

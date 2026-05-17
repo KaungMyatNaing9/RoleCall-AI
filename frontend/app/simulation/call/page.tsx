@@ -2,27 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useConversation, ConversationProvider } from "@elevenlabs/react";
-
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
 import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
-
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 
-import { cameraStreamRef, setVideoTrackEnabled } from "@/lib/cameraStream";
-import { useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
+import { cameraStreamRef } from "@/lib/cameraStream";
 import {
   api,
-  type LiveCoaching,
   type SimulationTurn,
   type TranscriptEntry,
 } from "@/lib/apiClient";
 import { formatTime } from "@/lib/utils";
-import { finalizeSessionSignals } from "@/lib/finalizeSession";
 import { useVideoSignals } from "@/lib/useVideoSignals";
-import { LiveSignalsPanel } from "@/components/simulation/LiveSignalsPanel";
 
 import { useSimulationStore } from "@/stores/simulationStore";
 
@@ -63,55 +56,27 @@ const MOOD_SET = new Set([
   "confused",
 ]);
 
-const CRITICAL_PHRASES = [
-  "chest tightness",
-  "chest pain",
-  "tightness in my chest",
-  "tightness in chest",
-  "can't breathe",
-  "cannot breathe",
-  "can not breathe",
-  "shortness of breath",
-  "trouble breathing",
-  "difficulty breathing",
-  "passed out",
-  "feel faint",
-  "feeling faint",
+const CRITICAL_KEYWORDS = [
+  "chest",
+  "tightness",
+  "pain",
+  "heart",
+  "dizzy",
+  "faint",
+  "bleeding",
+  "breathing",
+  "emergency",
   "unconscious",
-  "severe bleeding",
+  "severe",
   "stroke",
-  "heart attack",
-  "allergic reaction",
-  "anaphylaxis",
+  "can't breathe",
+  "shortness",
+  "pressure",
 ];
 
 function hasCriticalKeyword(text: string): boolean {
   const lower = text.toLowerCase();
-  return CRITICAL_PHRASES.some((phrase) => lower.includes(phrase));
-}
-
-function criticalExcerpt(text: string, maxLen = 140): string {
-  const trimmed = text.trim().replace(/\s+/g, " ");
-  if (trimmed.length <= maxLen) return trimmed;
-  return `${trimmed.slice(0, maxLen).trim()}…`;
-}
-
-function buildCriticalCoaching(persona: { hidden_red_flag?: string | null }, excerpt: string) {
-  const flagHint = persona.hidden_red_flag
-    ? persona.hidden_red_flag.split("—")[0].trim()
-    : "a possible clinical red flag";
-  return {
-    summary: "The persona surfaced language that may need urgent follow-up.",
-    next_best_action: `Acknowledge ${flagHint.toLowerCase()}, ask one focused safety question, and escalate if needed.`,
-    suggested_response:
-      "Thank you for telling me that. I want to make sure we handle this safely — can you describe what you're feeling right now?",
-    strengths: [] as string[],
-    warnings: [`Heard: "${criticalExcerpt(excerpt, 80)}"`],
-    clarity_estimate: 0.5,
-    empathy_estimate: 0.5,
-    turn_taking_estimate: 0.5,
-    risk_cue_count: 1,
-  };
+  return CRITICAL_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 function toAvatarPreset(s: string): AvatarPreset {
@@ -130,7 +95,13 @@ function currentTimestamp(startMs: number) {
   return formatTime(elapsed);
 }
 
-const TABS = ["Coaching", "Transcript", "Signals"] as const;
+const TABS = [
+  "Live Notes",
+  "Transcript",
+  "Rubric",
+  "Signals",
+  "Hints",
+] as const;
 
 function CtrlBtn({
   icon,
@@ -145,25 +116,10 @@ function CtrlBtn({
   onClick?: () => void;
   disabled?: boolean;
 }) {
-  const toneStyle =
-    tone === "violet"
-      ? {
-          background: "rgba(139,125,251,0.18)",
-          color: "#B5ACFD",
-          borderColor: "rgba(139,125,251,0.4)",
-        }
-      : tone === "amber"
-      ? {
-          background: "rgba(251,191,36,0.14)",
-          color: "#FCD34D",
-          borderColor: "rgba(251,191,36,0.35)",
-        }
-      : tone === "teal"
-      ? {
-          background: "rgba(45,212,191,0.14)",
-          color: "#5EEAD4",
-          borderColor: "rgba(45,212,191,0.35)",
-        }
+  const toneStyle = tone === "violet"
+    ? { background: "rgba(139,125,251,0.18)", color: "#B5ACFD", borderColor: "rgba(139,125,251,0.4)" }
+    : tone === "amber"
+      ? { background: "rgba(251,191,36,0.14)", color: "#FCD34D", borderColor: "rgba(251,191,36,0.35)" }
       : {};
 
   return (
@@ -182,8 +138,8 @@ function CtrlBtn({
         borderRadius: 12,
         color: "var(--ink-0)",
         cursor: disabled ? "not-allowed" : "pointer",
-        transition: "background .15s",
         opacity: disabled ? 0.45 : 1,
+        transition: "background .15s",
         ...toneStyle,
       }}
     >
@@ -193,66 +149,15 @@ function CtrlBtn({
   );
 }
 
-function Signal({
-  label,
-  v,
-  tone = "violet",
-  raw,
-}: {
-  label: string;
-  v: number;
-  tone?: string;
-  raw?: string;
-}) {
-  const colors: Record<string, string> = {
-    ok: "#6EE7B7",
-    warn: "#FCD34D",
-    bad: "#FCA5A5",
-    violet: "#B5ACFD",
-    teal: "#5EEAD4",
-  };
-
+function Signal({ label, v, tone = "violet", raw }: { label: string; v: number; tone?: string; raw?: string }) {
+  const colors: Record<string, string> = { ok: "#6EE7B7", warn: "#FCD34D", bad: "#FCA5A5", violet: "#B5ACFD", teal: "#5EEAD4" };
   const c = colors[tone] || colors.violet;
 
   return (
-    <div
-      style={{
-        padding: "8px 10px",
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid var(--line)",
-        borderRadius: 8,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          color: "var(--ink-3)",
-          marginBottom: 3,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            color: c,
-          }}
-          className="rc-mono"
-        >
-          {raw || `${Math.round(v)}%`}
-        </span>
-
+    <div style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", borderRadius: 8 }}>
+      <div style={{ fontSize: 10, color: "var(--ink-3)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: c }} className="rc-mono">{raw || `${Math.round(v)}%`}</span>
         <div style={{ display: "flex", gap: 2 }}>
           {[1, 2, 3, 4, 5].map((i) => (
             <div
@@ -261,10 +166,7 @@ function Signal({
                 width: 3,
                 height: 8 + i * 1.5,
                 borderRadius: 1,
-                background:
-                  i <= Math.round(v / 20)
-                    ? c
-                    : "rgba(255,255,255,0.1)",
+                background: i <= Math.round(v / 20) ? c : "rgba(255,255,255,0.1)",
               }}
             />
           ))}
@@ -274,75 +176,58 @@ function Signal({
   );
 }
 
-function CallPageContent() {
+function currentTimestamp(startMs: number) {
+  const elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  return formatTime(elapsed);
+}
+
+const TABS = ["Live Notes", "Transcript", "Rubric", "Signals", "Hints"] as const;
+
+export default function CallPage() {
   const router = useRouter();
   const store = useSimulationStore();
 
+  const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
-
   const sessionStartedRef = useRef(false);
   const stopListeningRef = useRef<() => void>(() => {});
   const startTimeRef = useRef(Date.now());
-  const sessionIdRef = useRef(
-    store.simulationId || `session-${Date.now()}`
-  );
+  const sessionIdRef = useRef(store.simulationId || `session-${Date.now()}`);
 
   const [elapsed, setElapsed] = useState(0);
-  const [visibleTranscript, setVisibleTranscript] = useState<
-    TranscriptEntry[]
-  >([]);
+  const [visibleTranscript, setVisibleTranscript] = useState<TranscriptEntry[]>([]);
   const [activeTab, setActiveTab] = useState(0);
-
   const [personaTalking, setPersonaTalking] = useState(false);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [isWaitingReply, setIsWaitingReply] = useState(false);
-
   const [draftReply, setDraftReply] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
 
-  const persona =
-    store.persona || {
-      id: "persona-margaret-001",
-      name: "Margaret Lewis",
-      age: 72,
-      role: "Post-discharge patient",
-      mood: "worried",
-      traits: ["polite", "hesitant", "apologetic"],
-      goal: "Understand new medication instructions",
-      hidden_red_flag:
-        "Chest tightness — reveals only if asked about symptoms or after ~2 min",
-      behavior: "Apologetic, asks to repeat, easily distracted",
-      voice_style:
-        "Elderly, calm, slightly anxious — light tremor",
-      opening_line:
-        "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
-      avatar_preset: "margaret",
-      sample_lines: [],
-    };
-
-  const avatarPreset = toAvatarPreset(
-    persona.avatar_preset ?? "margaret"
-  );
-
-  const moodPreset = toMoodPreset(
-    persona.mood ?? "neutral"
-  );
+  const persona = store.persona || {
+    id: "persona-margaret-001",
+    name: "Margaret Lewis",
+    age: 72,
+    role: "Post-discharge patient",
+    mood: "worried",
+    traits: ["polite", "hesitant", "apologetic"],
+    goal: "Understand new medication instructions",
+    hidden_red_flag: "Chest tightness — reveals only if asked about symptoms or after ~2 min",
+    behavior: "Apologetic, asks to repeat, easily distracted",
+    voice_style: "Elderly, calm, slightly anxious — light tremor",
+    opening_line: "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
+    avatar_preset: "margaret",
+    sample_lines: [],
+  };
 
   const mode = store.mode || "video";
   const industry = store.industry || "Healthcare";
   const difficulty = store.difficulty || "Medium";
-
   const isVideoMode = mode === "video";
   const isVoiceMode = mode === "voice";
   const isPhoneMode = mode === "phone";
   const isTextMode = mode === "text";
-  const useElevenLabs = Boolean(store.agentId) && !isTextMode;
-  const needsCallMedia = isVideoMode || isVoiceMode || isPhoneMode;
-  const localMedia = useLocalMediaPreview({
-    video: isVideoMode,
-    audio: needsCallMedia,
-  });
 
   const latestLine =
     visibleTranscript[visibleTranscript.length - 1];
@@ -352,49 +237,9 @@ function CallPageContent() {
     .find((line) => line.speaker === "patient");
 
   const progress = Math.min(elapsed / 300, 1);
-
   const liveCoaching = store.liveCoaching;
 
-  const visibleTranscriptRef = useRef(visibleTranscript);
-  useEffect(() => {
-    visibleTranscriptRef.current = visibleTranscript;
-  }, [visibleTranscript]);
-
-  const lastCriticalKeyRef = useRef<string | null>(null);
-
-  const applyCriticalMoment = useCallback(
-    (text: string, coaching?: LiveCoaching | null) => {
-      const excerpt = criticalExcerpt(text);
-      const dedupeKey = excerpt.slice(0, 100);
-      if (lastCriticalKeyRef.current === dedupeKey) {
-        if (coaching?.suggested_response) {
-          store.setLiveCoaching(coaching);
-        }
-        return;
-      }
-      lastCriticalKeyRef.current = dedupeKey;
-      store.triggerCriticalMoment(excerpt);
-      if (coaching?.suggested_response) {
-        store.setLiveCoaching(coaching);
-      } else if (!useSimulationStore.getState().liveCoaching?.suggested_response) {
-        useSimulationStore.getState().setLiveCoaching(buildCriticalCoaching(persona, excerpt));
-      }
-    },
-    [persona, store],
-  );
-
-  const applyCriticalMomentRef = useRef(applyCriticalMoment);
-  applyCriticalMomentRef.current = applyCriticalMoment;
-
-  const {
-    startSession,
-    endSession,
-    status: voiceAgentStatus,
-    isSpeaking,
-    isListening: agentIsListening,
-    setMuted: setVoiceAgentMuted,
-  } = useConversation({
-    micMuted: store.isMuted,
+  const conversation = useConversation({
     onMessage: ({
       message,
       source,
@@ -413,49 +258,26 @@ function CallPageContent() {
       store.addTranscriptEntry(entry);
 
       if (entry.is_critical) {
-        applyCriticalMomentRef.current(message);
+        store.triggerCriticalMoment(message);
       }
     },
 
     onError: (error: string) => {
       console.error("ElevenLabs error:", error);
-      setErrorMessage(typeof error === "string" ? error : "Voice agent connection error.");
     },
   });
 
-  useVideoSignals(
-    localMedia.videoRef,
-    sessionIdRef.current,
-    isVideoMode && store.consentVideoSignals,
-  );
+  useVideoSignals(videoRef, sessionIdRef.current);
 
   const coachingStats = useMemo(() => {
-    const userTurns = visibleTranscript.filter(
-      (line) => line.speaker === "user"
-    );
-
-    const patientTurns = visibleTranscript.filter(
-      (line) => line.speaker === "patient"
-    );
-
-    const totalWords = userTurns.reduce(
-      (sum, line) =>
-        sum +
-        line.text
-          .split(/\s+/)
-          .filter(Boolean).length,
-      0
-    );
-
+    const userTurns = visibleTranscript.filter((line) => line.speaker === "user");
+    const patientTurns = visibleTranscript.filter((line) => line.speaker === "patient");
+    const totalWords = userTurns.reduce((sum, line) => sum + line.text.split(/\s+/).filter(Boolean).length, 0);
     return {
       userTurns: userTurns.length,
       patientTurns: patientTurns.length,
-      avgWords: userTurns.length
-        ? Math.round(totalWords / userTurns.length)
-        : 0,
-      riskCues: visibleTranscript.filter(
-        (line) => line.is_critical
-      ).length,
+      avgWords: userTurns.length ? Math.round(totalWords / userTurns.length) : 0,
+      riskCues: visibleTranscript.filter((line) => line.is_critical).length,
     };
   }, [visibleTranscript]);
 
@@ -470,45 +292,37 @@ function CallPageContent() {
       store.setLiveCoaching(response.coaching);
 
       if (response.entry.is_critical) {
-        applyCriticalMoment(response.entry.text, response.coaching);
+        store.triggerCriticalMoment(
+          response.coaching.next_best_action
+        );
       }
-    },
-    [applyCriticalMoment, store],
-  );
-
-  const appendTranscript = useCallback(
-    (entry: TranscriptEntry) => {
-      setVisibleTranscript((current) => [
-        ...current,
-        entry,
-      ]);
-
-      store.addTranscriptEntry(entry);
     },
     [store]
   );
 
-  const playPersonaVoice = useCallback(
-    async (text: string) => {
-      if (isTextMode || store.isMuted) return;
+  const appendTranscript = useCallback((entry: TranscriptEntry) => {
+    setVisibleTranscript((current) => [...current, entry]);
+    store.addTranscriptEntry(entry);
+  }, [store]);
 
-      try {
-        setIsPlayingVoice(true);
+  const playPersonaVoice = useCallback(async (text: string) => {
+    if (isTextMode || store.isMuted) return;
+    try {
+      setIsPlayingVoice(true);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
 
-        if (audioRef.current) {
-          audioRef.current.pause();
-        }
-
-        if (audioUrlRef.current) {
-          URL.revokeObjectURL(audioUrlRef.current);
-          audioUrlRef.current = null;
-        }
-
-        const blob = await api.synthesizeVoice({
-          text,
-          persona_name: persona.name,
-          voice_style: persona.voice_style,
-        });
+      const blob = await api.synthesizeVoice({
+        text,
+        persona_id: persona.id,
+        persona_name: persona.name,
+        voice_style: persona.voice_style,
+      });
 
         const url = URL.createObjectURL(blob);
 
@@ -550,48 +364,9 @@ function CallPageContent() {
     ]
   );
 
-  const goToAnalyzing = useCallback(async () => {
-    stopListeningRef.current();
-    if (useElevenLabs && voiceAgentStatus === "connected") {
-      await Promise.resolve(endSession());
-    }
-    cameraStreamRef.stop();
-    store.endCall();
-
-    const transcriptSnapshot = visibleTranscriptRef.current;
-    const storeTranscript = useSimulationStore.getState().transcript;
-    const transcript =
-      transcriptSnapshot.length >= storeTranscript.length
-        ? transcriptSnapshot
-        : storeTranscript;
-    if (transcript.length > storeTranscript.length) {
-      useSimulationStore.setState({ transcript });
-    }
-
-    const durationS = Math.max(1, Math.floor((Date.now() - startTimeRef.current) / 1000));
-    store.setSessionDurationS(durationS);
-
-    try {
-      const signals = await finalizeSessionSignals({
-        sessionId: sessionIdRef.current,
-        durationS,
-        transcript,
-        consentVideo: store.consentVideoSignals && isVideoMode,
-        consentAudio: store.consentAudioSignals,
-      });
-      store.setSessionSignals(signals.video, signals.audio);
-      store.markSessionSignalsFinalized();
-    } catch {
-      // Non-fatal — analyzing may retry with the same duration.
-    }
-
-    router.push("/analyzing");
-  }, [endSession, isVideoMode, router, store, useElevenLabs, voiceAgentStatus]);
-
   const requestPersonaReply = useCallback(async (userMessage: string, turnIndex: number) => {
     setIsWaitingReply(true);
     setErrorMessage("");
-
     try {
       const response = await api.simulationRespond({
         session_id: sessionIdRef.current,
@@ -673,9 +448,11 @@ function CallPageContent() {
   }, [interimTranscript]);
 
   useEffect(() => {
-    if (!isVideoMode || !localMedia.isReady) return;
-    setVideoTrackEnabled(!store.isCameraOff);
-  }, [isVideoMode, localMedia.isReady, store.isCameraOff]);
+    const stream = cameraStreamRef.get();
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
@@ -898,26 +675,7 @@ function CallPageContent() {
 
               {isVideoMode && (
                 <div style={{ position: "absolute", bottom: 14, right: 14, width: 200, height: 140, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-2)", background: "linear-gradient(160deg, #1A2540 0%, #0E1A2C 100%)", boxShadow: "0 12px 30px -8px rgba(0,0,0,0.5)" }}>
-                  <video
-                    ref={localMedia.videoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      opacity: store.isCameraOff ? 0.2 : localMedia.isReady ? 1 : 0,
-                      transform: "scaleX(-1)",
-                    }}
-                  />
-                  {!localMedia.isReady && (
-                    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 10, fontSize: 10, color: localMedia.status === "error" ? "#FCA5A5" : "var(--ink-2)", textAlign: "center", background: "rgba(0,0,0,0.55)" }}>
-                      {localMedia.errorMessage || "Starting camera…"}
-                    </div>
-                  )}
+                  <video ref={videoRef} autoPlay muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: store.isCameraOff ? 0.2 : 1 }} />
                   <div style={{ position: "absolute", top: 8, left: 8, fontSize: 10, padding: "2px 7px", background: "rgba(0,0,0,0.55)", borderRadius: 6 }}>You</div>
                 </div>
               )}
@@ -1078,13 +836,5 @@ function CallPageContent() {
         </div>
       </div>
     </div>
-  );
-}
-
-export default function CallPage() {
-  return (
-    <ConversationProvider>
-      <CallPageContent />
-    </ConversationProvider>
   );
 }

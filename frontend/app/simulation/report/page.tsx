@@ -6,66 +6,6 @@ import { TopNav } from "@/components/layout/TopNav";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { PRIVACY_NOTICE } from "@/lib/constants";
-import { mergeReportInsights } from "@/lib/signalInsights";
-import type { EvaluationReport } from "@/lib/apiClient";
-
-const MOCK_REPORT: EvaluationReport = {
-  session_id: "demo",
-  overall_score: 78,
-  persona_name: "Margaret Lewis",
-  duration: "5:42",
-  mode: "video",
-  industry: "Healthcare",
-  difficulty: "Medium",
-  skill_scores: {
-    Empathy: 86,
-    Clarity: 80,
-    "Active listening": 74,
-    "Safety / escalation": 58,
-    Professionalism: 84,
-  },
-  key_moments: [
-    {
-      timestamp: "02:41",
-      position_pct: 0.47,
-      type: "risk",
-      title: "Escalation missed",
-      excerpt: "…and I felt this tightness in my chest…",
-      why_it_mattered: "Chest tightness after surgery needs urgent follow-up.",
-      better_response:
-        "Because you mentioned chest tightness, I need to connect you with clinical support right away.",
-    },
-  ],
-  annotated_transcript: [
-    {
-      speaker: "You",
-      timestamp: "00:42",
-      text: "I can hear this has been a worrying time. Let me help you step by step.",
-      tag: "strong",
-      tag_label: "Strong empathy",
-    },
-    {
-      speaker: "Margaret Lewis",
-      timestamp: "02:41",
-      text: "…and I felt this tightness in my chest.",
-      tag: "risk",
-      tag_label: "Red flag",
-    },
-  ],
-  multimodal_insights: [
-    { label: "Speaking pace", value: "164 wpm", tone: "warn" },
-    { label: "Filler words", value: "12", tone: "warn" },
-    { label: "Interruptions", value: "3", tone: "warn" },
-  ],
-  coach_feedback: {
-    did_well: "Strong empathy and calm tone throughout.",
-    missed: "When chest tightness was mentioned, escalation was delayed.",
-    try_next: "Practice a short red-flag escalation drill.",
-    next_drill_title: "Red-flag escalation drill",
-  },
-  next_practice: [],
-  privacy_notice: PRIVACY_NOTICE,
-};
 
 const TAG_COLORS: Record<string, string> = {
   strong: "#6EE7B7",
@@ -74,14 +14,135 @@ const TAG_COLORS: Record<string, string> = {
   question: "#93B4FF",
 };
 
+const MOMENT_COLORS: Record<string, string> = { strong: "#6EE7B7", improve: "#FCD34D", risk: "#FCA5A5", question: "#93B4FF" };
+
+function parseDurationToSeconds(d: string): number {
+  const parts = d.split(":").map(Number);
+  return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
+}
+
+function fmtSeconds(s: number): string {
+  return `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+function ScoreTile({ l, v, hot }: { l: string; v: number; hot?: boolean }) {
+  const c = v >= 80 ? "#5EEAD4" : v >= 70 ? "#93B4FF" : v >= 60 ? "#FCD34D" : "#FCA5A5";
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: hot ? "linear-gradient(180deg, rgba(248,113,113,0.10), rgba(248,113,113,0.02))" : "rgba(255,255,255,0.03)", border: hot ? "1px solid rgba(248,113,113,0.45)" : "1px solid var(--line)", position: "relative" }}>
+      {hot && <div style={{ position: "absolute", top: 7, right: 8, fontSize: 9, color: "#FCA5A5", fontWeight: 600, letterSpacing: "0.05em" }}>FOCUS</div>}
+      <div style={{ fontSize: 10, color: "var(--ink-3)", letterSpacing: "0.03em", textTransform: "uppercase", marginBottom: 3 }}>{l}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: c, letterSpacing: "-0.02em" }}>{v}</span>
+        <span style={{ fontSize: 10, color: "var(--ink-3)" }}>/100</span>
+      </div>
+      <div style={{ height: 3, marginTop: 5, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${v}%`, background: c, opacity: 0.8 }} />
+      </div>
+    </div>
+  );
+}
+
+function ModalityTile({
+  modality,
+  weight,
+  used,
+  confidence,
+  note,
+}: {
+  modality: string;
+  weight: number;
+  used: boolean;
+  confidence?: number;
+  note?: string;
+}) {
+  const tone = !used ? "#94A3B8" : modality === "Video" ? "#93B4FF" : modality === "Audio" ? "#5EEAD4" : "#FCD34D";
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: used ? "rgba(255,255,255,0.03)" : "rgba(148,163,184,0.06)", border: used ? "1px solid var(--line)" : "1px solid rgba(148,163,184,0.2)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{modality}</div>
+        <div className={`rc-pill ${used ? "ok" : ""}`} style={!used ? { opacity: 0.7 } : undefined}>{used ? "Used in scoring" : "Not applied"}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: tone }}>{weight}%</span>
+        <span style={{ fontSize: 11, color: "var(--ink-3)" }}>rubric weight</span>
+      </div>
+      {typeof confidence === "number" && <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 4 }}>Confidence: {confidence}%</div>}
+      {note && <div style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.45, marginTop: 4 }}>{note}</div>}
+    </div>
+  );
+}
+
+function RadarChart({ scores }: { scores: Record<string, number> }) {
+  const entries = Object.entries(scores);
+  const N = entries.length;
+  if (N < 3) return null;
+
+  const cx = 100, cy = 100, r = 72;
+
+  const pt = (i: number, val: number) => {
+    const angle = (2 * Math.PI / N) * i - Math.PI / 2;
+    const d = r * val / 100;
+    return { x: cx + d * Math.cos(angle), y: cy + d * Math.sin(angle) };
+  };
+
+  const toPath = (pts: { x: number; y: number }[]) =>
+    pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") + " Z";
+
+  const scorePts = entries.map(([, v], i) => pt(i, v));
+
+  return (
+    <svg width={200} height={200} style={{ display: "block", margin: "0 auto", overflow: "visible" }}>
+      {[20, 40, 60, 80, 100].map((l) => (
+        <path key={l} d={toPath(entries.map((_, i) => pt(i, l)))} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+      ))}
+      {entries.map((_, i) => {
+        const p = pt(i, 100);
+        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />;
+      })}
+      <path d={toPath(scorePts)} fill="rgba(93,234,191,0.12)" stroke="#5EEAD4" strokeWidth="1.5" />
+      {scorePts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill="#5EEAD4" />)}
+      {entries.map(([k, v], i) => {
+        const p = pt(i, 122);
+        const anchor = p.x < cx - 4 ? "end" : p.x > cx + 4 ? "start" : "middle";
+        const color = v >= 80 ? "#5EEAD4" : v >= 60 ? "#FCD34D" : "#FCA5A5";
+        return (
+          <text key={i} x={p.x} y={p.y} textAnchor={anchor} dominantBaseline="middle" fontSize="8.5" fontFamily="inherit">
+            <tspan fill="var(--ink-2)">{k.length > 12 ? k.slice(0, 11) + "…" : k}</tspan>
+            <tspan fill={color} fontWeight="700"> {v}</tspan>
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function ReportPage() {
   const storeReport = useSimulationStore((s) => s.report);
-  const sessionVideo = useSimulationStore((s) => s.sessionVideoSignals);
-  const sessionAudio = useSimulationStore((s) => s.sessionAudioSignals);
-  const r = storeReport ?? MOCK_REPORT;
-  const multimodalInsights = useMemo(
-    () => mergeReportInsights(r, sessionVideo, sessionAudio),
-    [r, sessionAudio, sessionVideo],
+  if (!storeReport) {
+    return (
+      <AppShell>
+        <TopNav active="Reports" compact />
+        <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 28 }}>
+          <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
+              <Icons.warn size={24} />
+            </div>
+            <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>No evaluation report available</h1>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+              Complete a simulation session first, then return here from the analyzing flow.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+              <Link href="/dashboard"><button className="rc-btn ghost">Back to dashboard</button></Link>
+              <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Start a simulation</button></Link>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+  const r = storeReport;
+  const [selectedMoment, setSelectedMoment] = useState(() =>
+    r.key_moments.findIndex((m) => m.score_impact != null && m.score_impact < 0)
   );
   const [momentIndex, setMomentIndex] = useState(0);
   const moment = r.key_moments[momentIndex] ?? null;
@@ -206,11 +267,11 @@ export default function ReportPage() {
           </div>
         </section>
 
-        {multimodalInsights.length > 0 && (
+        {r.multimodal_insights.length > 0 && (
           <section className="rc-glass" style={{ padding: 18 }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Signals</h2>
             <ul style={{ margin: "0 0 12px", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
-              {multimodalInsights.map((x) => (
+              {r.multimodal_insights.map((x) => (
                 <li key={x.label} style={{ fontSize: 14, display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--ink-2)" }}>{x.label}</span>
                   <span style={{ fontWeight: 600 }}>{x.value}</span>

@@ -16,6 +16,15 @@ class Settings:
     anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest").strip()
     elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID", "").strip()
     elevenlabs_model_id = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2").strip()
+    elevenlabs_voice_female_young = os.getenv("ELEVENLABS_VOICE_FEMALE_YOUNG", "").strip()
+    elevenlabs_voice_female_adult = os.getenv("ELEVENLABS_VOICE_FEMALE_ADULT", "").strip()
+    elevenlabs_voice_female_senior = os.getenv("ELEVENLABS_VOICE_FEMALE_SENIOR", "").strip()
+    elevenlabs_voice_male_young = os.getenv("ELEVENLABS_VOICE_MALE_YOUNG", "").strip()
+    elevenlabs_voice_male_adult = os.getenv("ELEVENLABS_VOICE_MALE_ADULT", "").strip()
+    elevenlabs_voice_male_senior = os.getenv("ELEVENLABS_VOICE_MALE_SENIOR", "").strip()
+    elevenlabs_voice_neutral_young = os.getenv("ELEVENLABS_VOICE_NEUTRAL_YOUNG", "").strip()
+    elevenlabs_voice_neutral_adult = os.getenv("ELEVENLABS_VOICE_NEUTRAL_ADULT", "").strip()
+    elevenlabs_voice_neutral_senior = os.getenv("ELEVENLABS_VOICE_NEUTRAL_SENIOR", "").strip()
 
 
 settings = Settings()

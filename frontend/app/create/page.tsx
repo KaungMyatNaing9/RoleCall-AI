@@ -8,6 +8,13 @@ import { useSimulationStore } from "@/stores/simulationStore";
 import { api } from "@/lib/apiClient";
 import { EVALUATION_CRITERIA } from "@/lib/constants";
 
+const STEPS = [
+  { n: 1, t: "Industry" },
+  { n: 2, t: "Persona" },
+  { n: 3, t: "Difficulty" },
+  { n: 4, t: "Evaluation" },
+];
+
 const INDUSTRIES = [
   "Healthcare",
   "Customer Service",
@@ -38,17 +45,12 @@ export default function CreatePage() {
     "An elderly post-discharge patient who is confused about medication and later mentions chest tightness.",
   );
   const [difficulty, setDifficulty] = useState("Medium");
-  const [evalFocus, setEvalFocus] = useState([
-    "Empathy",
-    "Clarity",
-    "Active listening",
-    "Escalation",
-  ]);
+  const [sliders, setSliders] = useState({ emotional_intensity: 0.4, interruptions: 0.25, hidden_agenda: 0.6, patience: 0.7, escalation_risk: 0.55 });
+  const [toggles, setToggles] = useState({ hidden_red_flag: true, random_surprise: true, light_accent: false });
+  const [evalFocus, setEvalFocus] = useState(["Empathy", "Clarity", "Active listening", "Escalation", "Turn-taking"]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
-  const [agentStatus, setAgentStatus] = useState<
-    "idle" | "persona" | "scenario" | "rubric" | "agent" | "done"
-  >("idle");
+  const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "agent" | "done">("idle");
 
   const suggestions = [
     "Angry customer demanding refund",
@@ -66,7 +68,6 @@ export default function CreatePage() {
     setIsGenerating(true);
     setGenerateError("");
     try {
-      store.setMode("video");
       store.setIndustry(selectedIndustry);
       store.setPersonaPrompt(prompt);
       store.setDifficulty(difficulty);
@@ -77,6 +78,8 @@ export default function CreatePage() {
         prompt,
         industry: selectedIndustry,
         difficulty,
+        behavior_sliders: sliders,
+        behavior_toggles: toggles,
       });
       store.setPersona(persona);
 
@@ -86,6 +89,8 @@ export default function CreatePage() {
         industry: selectedIndustry,
         difficulty,
         mode: "adaptive",
+        behavior_sliders: sliders,
+        behavior_toggles: toggles,
       });
       store.setScenario(scenario);
 
@@ -93,18 +98,12 @@ export default function CreatePage() {
       const rubric = await api.generateRubric({
         scenario_id: scenario.id,
         industry: selectedIndustry,
+        difficulty,
+        mode: "adaptive",
         evaluation_focus: evalFocus,
       });
       store.setRubric(rubric);
       store.setSimulationId(`session-${Date.now()}`);
-
-      setAgentStatus("agent");
-      try {
-        const agentResult = await api.createAgent({ persona, scenario, rubric });
-        store.setAgentId(agentResult.agent_id);
-      } catch (err) {
-        console.warn("ElevenLabs agent creation failed:", err);
-      }
 
       setAgentStatus("done");
       setTimeout(() => router.push("/simulation/preview"), 400);
@@ -122,6 +121,12 @@ export default function CreatePage() {
   };
 
   const statusLabel = GENERATION_LABELS[agentStatus];
+  const agents = [
+    { n: "Persona Generator", s: agentStatus === "persona" ? "working" : agentStatus === "idle" ? "queued" : "done", i: <Icons.user size={11} /> },
+    { n: "Scenario Builder", s: agentStatus === "scenario" ? "working" : ["idle", "persona"].includes(agentStatus) ? "queued" : "done", i: <Icons.flag size={11} /> },
+    { n: "Rubric Agent", s: agentStatus === "rubric" ? "working" : ["idle", "persona", "scenario"].includes(agentStatus) ? "queued" : "done", i: <Icons.check size={11} /> },
+    { n: "Simulation Agent", s: agentStatus === "done" ? "done" : ["idle", "persona", "scenario", "rubric"].includes(agentStatus) ? "queued" : "working", i: <Icons.mic size={11} /> },
+  ];
 
   return (
     <AppShell>
@@ -241,6 +246,22 @@ export default function CreatePage() {
           </div>
         </section>
 
+        {isGenerating && (
+          <div className="rc-glass" style={{ padding: 14, marginBottom: 16 }}>
+            <div className="rc-label" style={{ marginBottom: 8 }}>Active agents</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {agents.map(a => (
+                <div key={a.n} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, display: "grid", placeItems: "center", background: a.s === "working" ? "rgba(45,212,191,0.15)" : a.s === "done" ? "rgba(139,125,251,0.18)" : "rgba(255,255,255,0.05)", color: a.s === "working" ? "#5EEAD4" : a.s === "done" ? "#B5ACFD" : "var(--ink-3)" }}>{a.i}</div>
+                  <span style={{ flex: 1, color: a.s === "working" ? "var(--ink-0)" : "var(--ink-2)" }}>{a.n}</span>
+                  {a.s === "working" && <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", animation: "rc-pulse 1.4s infinite" }} />}
+                  {a.s === "queued" && <span style={{ fontSize: 10, color: "var(--ink-3)" }}>queued</span>}
+                  {a.s === "done" && <Icons.check size={11} />}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <button
           type="button"
           className="rc-btn primary lg"

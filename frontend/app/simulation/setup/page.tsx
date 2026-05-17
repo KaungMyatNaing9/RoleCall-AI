@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
@@ -11,7 +11,10 @@ import { PRIVACY_NOTICE } from "@/lib/constants";
 
 export default function SetupPage() {
   const router = useRouter();
-  const joinedRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const joiningRef = useRef(false);
+  const [camOk, setCamOk] = useState(false);
+  const [camError, setCamError] = useState(false);
   const store = useSimulationStore();
   const personaName = store.persona?.name || "Your practice partner";
   const mode = store.mode || "video";
@@ -27,15 +30,41 @@ export default function SetupPage() {
   });
 
   useEffect(() => {
+    if (!isVideoMode && !isVoiceMode) {
+      setCamOk(false);
+      setCamError(false);
+      return;
+    }
+    let stream: MediaStream | null = null;
+    const existing = cameraStreamRef.get();
+    if (existing) {
+      existing.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.set(null);
+    }
+    navigator.mediaDevices.getUserMedia({ video: isVideoMode ? { width: 1280, height: 720, facingMode: "user" } : false, audio: true })
+      .then(s => {
+        stream = s;
+        cameraStreamRef.set(s);
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          void videoRef.current.play().catch(() => {});
+        }
+        setCamOk(true);
+      })
+      .catch(() => setCamError(true));
+
     return () => {
-      if (!joinedRef.current) {
-        cameraStreamRef.stop();
+      if (stream && !joiningRef.current) {
+        stream.getTracks().forEach(t => t.stop());
+        if (cameraStreamRef.get() === stream) {
+          cameraStreamRef.set(null);
+        }
       }
     };
-  }, []);
+  }, [isVideoMode, isVoiceMode]);
 
   const handleJoin = () => {
-    joinedRef.current = true;
+    joiningRef.current = true;
     store.startCall();
     router.push("/simulation/call");
   };

@@ -90,6 +90,8 @@ const DEFAULT_SIGNALS: VideoSignals = {
   speaking_pace_wpm: 164,
   interruption_count: 3,
   filler_word_count: 12,
+  analysis_source: "video_heuristic_fallback",
+  confidence: 0.25,
   privacy_notice: "Video interaction signals are coaching estimates. They are not emotion detection, truth detection, psychological assessment, or medical assessment.",
 };
 
@@ -102,6 +104,8 @@ const DEFAULT_AUDIO_SIGNALS: AudioSignals = {
   interruption_count: 0,
   avg_response_time_s: 1.8,
   total_speaking_time_s: 0,
+  analysis_source: "audio_signal_service",
+  confidence: 0.25,
 };
 
 export const useSimulationStore = create<SimulationState>((set) => ({
@@ -111,7 +115,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   difficulty: "Medium",
   difficultySliders: { emotional_intensity: 0.4, interruptions: 0.25, hidden_agenda: 0.6, patience: 0.7, escalation_risk: 0.55 },
   behaviorToggles: { hidden_red_flag: true, random_surprise: true, light_accent: false },
-  evaluationFocus: ["Empathy", "Clarity", "Active listening", "Escalation", "Nonverbal presence", "Eye-contact estimate"],
+  evaluationFocus: ["Empathy", "Clarity", "Active listening", "Escalation", "Turn-taking"],
   currentStep: 1,
 
   persona: null,
@@ -192,10 +196,16 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
-    criticalMomentVisible: false, criticalMomentMessage: "", report: null,
-    sessionVideoSignals: null, sessionAudioSignals: null,
-    sessionDurationS: null, sessionSignalsFinalized: false, signalHistory: [],
-    liveSignals: DEFAULT_SIGNALS, liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
+    signalHistory: [],
+    liveSignals: DEFAULT_SIGNALS,
+    liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
     liveCoaching: null,
+    criticalMomentVisible: false,
+    criticalMomentMessage: "",
+    report: null,
+    sessionVideoSignals: null,
+    sessionAudioSignals: null,
+    sessionDurationS: null,
+    sessionSignalsFinalized: false,
   }),
 }));

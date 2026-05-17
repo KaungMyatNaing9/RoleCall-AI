@@ -2,16 +2,14 @@ import random
 from app.models.persona import PersonaResponse
 from app.models.scenario import ScenarioResponse
 from app.models.rubric import RubricResponse, RubricItem
-from app.models.simulation import TranscriptEntry, SimulationTurn
-from app.models.signals import VideoSignals, AudioSignals, FrameAnalysisResponse, PRIVACY_NOTICE
-from app.models.evaluation import (
-    EvaluationReport, KeyMoment, AnnotatedTurn, CoachFeedback, MultimodalInsightItem
-)
+from app.models.simulation import LiveCoaching, TranscriptEntry, SimulationTurn
+from app.models.signals import VideoSignals, AudioSignals, FrameAnalysisResponse
 
 MARGARET_PERSONA = PersonaResponse(
     id="persona-margaret-001",
     name="Margaret Lewis",
     age=72,
+    gender="female",
     role="Post-discharge patient",
     mood="worried",
     traits=["polite", "hesitant", "apologetic"],
@@ -72,122 +70,6 @@ MOCK_RUBRIC = RubricResponse(
     ],
 )
 
-MOCK_KEY_MOMENTS = [
-    KeyMoment(timestamp="00:42", position_pct=0.07, type="strong", title="Strong empathy opening",
-              excerpt="I can hear this has been a worrying time. Let me help you through this step by step."),
-    KeyMoment(timestamp="01:18", position_pct=0.22, type="improve", title="Missed clarifying question",
-              excerpt="Got it, let me know which pill you're asking about.",
-              why_it_mattered="Opportunity to ask about dizziness or other symptoms was missed."),
-    KeyMoment(timestamp="02:05", position_pct=0.36, type="risk", title="Dizziness mention missed",
-              excerpt="I've been a little dizzy, but I think it's just from the surgery.",
-              why_it_mattered="Dizziness after surgery warrants follow-up. It was not explored."),
-    KeyMoment(timestamp="02:41", position_pct=0.47, type="risk", title="Escalation opportunity missed",
-              excerpt="I also feel a little tightness in my chest, but maybe I'm just nervous.",
-              why_it_mattered=(
-                  "Chest tightness after surgery is a red flag for cardiac or pulmonary complications. "
-                  "The conversation should have shifted to immediate triage."
-              ),
-              better_response=(
-                  "Because you mentioned chest tightness after surgery, I need to connect you with urgent "
-                  "clinical support right away. I'm going to stay with you while we get the right person involved."
-              ),
-              score_impact=-12),
-    KeyMoment(timestamp="03:20", position_pct=0.58, type="question", title="Good clarifying question",
-              excerpt="Can you tell me where the tightness was and when it started?"),
-    KeyMoment(timestamp="04:30", position_pct=0.80, type="strong", title="Clear next steps communicated",
-              excerpt="I'm going to connect you with our clinical team right now. Stay on the line."),
-]
-
-MOCK_ANNOTATED_TRANSCRIPT = [
-    AnnotatedTurn(speaker="You", timestamp="00:42",
-                  text="I can hear this has been a worrying time. Let me help you through this step by step.",
-                  tag="strong", tag_label="Strong empathy"),
-    AnnotatedTurn(speaker="Margaret", timestamp="01:05",
-                  text="I just got home yesterday and they gave me so many bottles…"),
-    AnnotatedTurn(speaker="You", timestamp="01:18",
-                  text="Got it, let me know which pill you're asking about.",
-                  tag="improve", tag_label="Missed clarifying question — was she dizzy?"),
-    AnnotatedTurn(speaker="Margaret", timestamp="02:05",
-                  text="I've been a little dizzy, but I think it's just from the surgery."),
-    AnnotatedTurn(speaker="Margaret", timestamp="02:41",
-                  text="…and I felt this tightness in my chest, but I wasn't sure if it was from the surgery.",
-                  tag="risk", tag_label="Critical red flag mentioned"),
-    AnnotatedTurn(speaker="You", timestamp="02:45",
-                  text="Okay, and were you taking the white pill in the morning or evening?",
-                  tag="risk", tag_label="Missed escalation — continued with medication question"),
-    AnnotatedTurn(speaker="You", timestamp="03:20",
-                  text="Can you tell me where the tightness was and when it started?",
-                  tag="question", tag_label="Good clarifying question (slightly late)"),
-]
-
-MOCK_MULTIMODAL_INSIGHTS = [
-    MultimodalInsightItem(label="Eye-contact estimate", value="62%", note="steady", tone="warn"),
-    MultimodalInsightItem(label="Speaking pace", value="164 wpm", note="slightly fast", tone="warn"),
-    MultimodalInsightItem(label="Facial engagement", value="consistent", tone="ok"),
-    MultimodalInsightItem(label="Camera presence", value="centered", tone="ok"),
-    MultimodalInsightItem(label="Filler words", value="12", note="um, like, you know", tone="warn"),
-    MultimodalInsightItem(label="Interruptions", value="3", tone="warn"),
-    MultimodalInsightItem(label="Avg response", value="18s", tone="ok"),
-    MultimodalInsightItem(label="Longest pause", value="4.2s", tone="ok"),
-]
-
-MOCK_COACH_FEEDBACK = CoachFeedback(
-    did_well=(
-        "Strong empathy, calm tone throughout, and a respectful pace that suited an older patient. "
-        "Your opening line set a warm anchor. You asked clarifying questions and avoided rushing."
-    ),
-    missed=(
-        "When Margaret mentioned chest tightness at 02:41, you continued with medication questions "
-        "for 39 seconds instead of escalating immediately. This is the highest-impact moment of the call."
-    ),
-    try_next=(
-        "3-minute red-flag escalation drill · A harder variant where Margaret reveals symptoms "
-        "earlier and tries to deflect."
-    ),
-    next_drill_title="Red-flag escalation drill (Hard)",
-)
-
-MOCK_NEXT_PRACTICE = [
-    {"persona": "margaret", "name": "Red-flag escalation drill", "difficulty": "Hard",
-     "description": "Margaret reveals symptoms earlier and deflects.", "why": "Lowest score: escalation 58"},
-    {"persona": "aanya", "name": "Refund · interrupting customer", "difficulty": "Hard",
-     "description": "Customer talks over you constantly.", "why": "Turn-taking has plateaued"},
-    {"persona": "james", "name": "Behavioral · STAR specificity", "difficulty": "Medium",
-     "description": "Recruiter pushes for concrete examples.", "why": "Strongest growth area"},
-]
-
-MOCK_REPORT = EvaluationReport(
-    session_id="session-demo-001",
-    overall_score=78,
-    skill_scores={
-        "Empathy": 86,
-        "Clarity": 80,
-        "Active listening": 74,
-        "Safety / escalation": 58,
-        "Professionalism": 84,
-        "Turn-taking": 76,
-        "Video presence": 71,
-        "Pace control": 68,
-    },
-    key_moments=MOCK_KEY_MOMENTS,
-    annotated_transcript=MOCK_ANNOTATED_TRANSCRIPT,
-    multimodal_insights=MOCK_MULTIMODAL_INSIGHTS,
-    coach_feedback=MOCK_COACH_FEEDBACK,
-    next_practice=MOCK_NEXT_PRACTICE,
-)
-
-MOCK_AGENT_LOG = [
-    {"agent": "Persona Generator", "color": "#5EEAD4",
-     "message": "Anchored on 'elderly, post-discharge, medication confusion.' Set politeness high, attention variable."},
-    {"agent": "Scenario Builder", "color": "#93B4FF",
-     "message": "Added latent red flag: chest tightness, revealed after symptom probe OR ~2 min latency."},
-    {"agent": "Rubric Agent", "color": "#B5ACFD",
-     "message": "Boosted weights on red-flag detection & escalation (high risk scenario)."},
-    {"agent": "Persona Generator", "color": "#5EEAD4",
-     "message": "Voice: female, ~70-75, calm pace 130 wpm, slight tremor on first syllables."},
-]
-
-
 def get_persona(prompt: str, industry: str) -> PersonaResponse:
     return MARGARET_PERSONA
 
@@ -208,8 +90,23 @@ def get_next_turn(session_id: str, turn_index: int, user_message: str) -> Simula
     return SimulationTurn(
         session_id=session_id,
         turn_index=idx,
+        phase="discovery" if idx < 4 else ("risk_assessment" if idx < 6 else "closing"),
         entry=entry,
         call_ended=call_ended,
+        audio_signals=AudioSignals(),
+        video_signals=VideoSignals(),
+        coaching=LiveCoaching(
+            phase="discovery" if idx < 4 else ("risk_assessment" if idx < 6 else "closing"),
+            summary="Mock fallback coaching.",
+            next_best_action="Ask a clarifying question and confirm the next step.",
+            suggested_response="Let me clarify one detail and make sure we choose the safest next step.",
+            strengths=["Mock fallback response."],
+            warnings=["This session is using mock fallback behavior."],
+            clarity_estimate=68,
+            empathy_estimate=66,
+            turn_taking_estimate=70,
+            risk_cue_count=1 if idx >= 4 else 0,
+        ),
     )
 
 
@@ -237,13 +134,3 @@ def get_mock_video_summary() -> VideoSignals:
 
 def get_mock_audio_summary() -> AudioSignals:
     return AudioSignals()
-
-
-def get_report(session_id: str) -> EvaluationReport:
-    report = MOCK_REPORT.model_copy()
-    report.session_id = session_id
-    return report
-
-
-def get_agent_log() -> list[dict]:
-    return MOCK_AGENT_LOG

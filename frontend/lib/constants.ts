@@ -17,11 +17,25 @@ export const MODES = [
 ];
 
 export const EVALUATION_CRITERIA = [
-  "Empathy", "Clarity", "Professionalism", "Active listening", "Escalation",
-  "Compliance", "Customer sat.", "STAR", "Discovery", "De-escalation",
-  "Nonverbal presence", "Eye-contact estimate", "Speaking pace", "Filler words",
-  "Interruptions", "Turn-taking",
+  "Empathy",
+  "Clarity",
+  "Professionalism",
+  "Active listening",
+  "Escalation",
+  "Compliance",
+  "Customer sat.",
+  "STAR",
+  "Discovery",
+  "De-escalation",
+  "Turn-taking",
 ];
+
+export const MODE_SPECIFIC_EVALUATION_CRITERIA = {
+  video: ["Nonverbal presence", "Eye-contact estimate", "Speaking pace", "Filler words", "Interruptions"],
+  voice: ["Speaking pace", "Filler words", "Interruptions"],
+  phone: ["Speaking pace", "Filler words", "Interruptions"],
+  text: [],
+} as const;
 
 export const PRIVACY_NOTICE =
   "Video interaction signals are coaching estimates. They are not emotion detection, truth detection, psychological assessment, or medical assessment.";

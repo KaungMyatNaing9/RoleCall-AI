@@ -10,23 +10,27 @@ export function useVideoSignals(
 ) {
   const store = useSimulationStore();
   const frameIndex = useRef(0);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
 
     const id = setInterval(async () => {
+      if (inFlightRef.current) return;
       const video = videoRef.current;
       if (!video || video.readyState < 2) return;
+      if (video.videoWidth < 40 || video.videoHeight < 40) return;
 
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      canvas.width = Math.min(video.videoWidth || 640, 480);
+      canvas.height = Math.min(video.videoHeight || 480, 360);
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const frame_b64 = canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
 
       try {
+        inFlightRef.current = true;
         const resp = await api.analyzeFrame({
           frame_b64,
           session_id: sessionId,
@@ -36,8 +40,10 @@ export function useVideoSignals(
         store.pushSignalSnapshot(resp.signals);
       } catch {
         // network errors are non-fatal; keep polling
+      } finally {
+        inFlightRef.current = false;
       }
-    }, 3000);
+    }, 1200);
 
     return () => clearInterval(id);
   }, [videoRef, sessionId, store, enabled]);
