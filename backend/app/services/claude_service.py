@@ -119,36 +119,48 @@ async def generate_rubric(scenario_id: str, industry: str, evaluation_focus: lis
 
     focus_text = ", ".join(evaluation_focus) if evaluation_focus else "general communication skills"
 
-    response = await client.messages.create(
-        model=MODEL,
-        max_tokens=512,
-        system=(
-            "You generate evaluation rubrics for communication training simulations. "
-            "Respond with valid JSON only — no markdown fences, no explanation."
-        ),
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Generate an evaluation rubric for a {industry} communication training simulation.\n"
-                f"Evaluation focus: {focus_text}\n\n"
-                "Return ONLY a JSON object with this exact structure:\n"
-                "{\n"
-                '  "items": [\n'
-                '    {\n'
-                '      "name": "skill name",\n'
-                '      "weight": <integer>,\n'
-                '      "is_hot": <boolean — true only for critical safety/escalation items>,\n'
-                '      "description": "what is being evaluated"\n'
-                "    }\n"
-                "  ]\n"
-                "}\n\n"
-                "Rules: 5-8 items, all weights are integers summing to exactly 100, "
-                "is_hot=true for at most 2 critical safety or escalation items."
-            ),
-        }],
+    user_content = (
+        f"Generate an evaluation rubric for a {industry} communication training simulation.\n"
+        f"Evaluation focus: {focus_text}\n\n"
+        "Return ONLY a JSON object with this exact structure:\n"
+        "{\n"
+        '  "items": [\n'
+        '    {\n'
+        '      "name": "skill name",\n'
+        '      "weight": <integer>,\n'
+        '      "is_hot": <boolean — true only for critical safety/escalation items>,\n'
+        '      "description": "what is being evaluated"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Rules: exactly 6 items, all weights are integers summing to exactly 100, "
+        "is_hot=true for at most 2 critical safety or escalation items, "
+        "each description is one short sentence (max 12 words)."
     )
 
-    data = _parse_json(response.content[0].text)
+    data: dict | None = None
+    for attempt in range(2):
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=1536 if attempt == 0 else 2048,
+            system=(
+                "You generate evaluation rubrics for communication training simulations. "
+                "Respond with valid JSON only — no markdown fences, no explanation. "
+                "Always complete the full JSON object."
+            ),
+            messages=[{"role": "user", "content": user_content}],
+        )
+        if response.stop_reason == "max_tokens":
+            continue
+        try:
+            data = _parse_json(response.content[0].text)
+            break
+        except json.JSONDecodeError:
+            continue
+
+    if data is None:
+        raise ValueError("Claude returned unparseable rubric JSON after 2 attempts")
+
     items = [RubricItem(**item) for item in data["items"]]
     total = sum(i.weight for i in items)
     return RubricResponse(id=f"rubric-{uuid.uuid4().hex[:8]}", items=items, total_weight=total)

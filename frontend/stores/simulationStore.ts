@@ -175,8 +175,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
-    criticalMomentVisible: false, report: null, signalHistory: [],
+    criticalMomentVisible: false, criticalMomentMessage: "", report: null, signalHistory: [],
     liveSignals: DEFAULT_SIGNALS, liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
-    liveCoaching: null, criticalMomentVisible: false, criticalMomentMessage: "", report: null,
+    liveCoaching: null,
   }),
 }));

@@ -19,6 +19,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
       : await request.arrayBuffer();
 
   let lastError: unknown;
+  let lastUpstream: Response | null = null;
 
   for (const baseUrl of DEFAULT_BACKEND_CANDIDATES) {
     const target = `${baseUrl.replace(/\/$/, "")}/${pathname}${query}`;
@@ -34,6 +35,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
 
       if (upstream.status >= 500) {
         lastError = new Error(`Upstream ${upstream.status} from ${baseUrl}`);
+        lastUpstream = upstream;
         continue;
       }
 
@@ -51,6 +53,19 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     } catch (error) {
       lastError = error;
     }
+  }
+
+  if (lastUpstream) {
+    const responseHeaders = new Headers();
+    const contentType = lastUpstream.headers.get("content-type");
+    if (contentType) {
+      responseHeaders.set("content-type", contentType);
+    }
+    return new Response(lastUpstream.body, {
+      status: lastUpstream.status,
+      statusText: lastUpstream.statusText,
+      headers: responseHeaders,
+    });
   }
 
   return Response.json(

@@ -98,13 +98,7 @@ function currentTimestamp(startMs: number) {
   return formatTime(elapsed);
 }
 
-const TABS = [
-  "Live Notes",
-  "Transcript",
-  "Rubric",
-  "Signals",
-  "Hints",
-] as const;
+const TABS = ["Coaching", "Transcript"] as const;
 
 function CtrlBtn({
   icon,
@@ -626,29 +620,10 @@ function CallPageContent() {
       <div style={{ position: "relative", zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 22px", background: "rgba(0,0,0,0.55)", borderBottom: "1px solid var(--line)", backdropFilter: "blur(20px)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <Logo size={20} />
-          <div style={{ width: 1, height: 18, background: "var(--line)" }} />
-          <div className="rc-pill teal">
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: "#2DD4BF", display: "inline-block", animation: "rc-pulse 1.4s infinite" }} />
-            {primaryModeLabel}
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>{persona.role} · {persona.name}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{industry} · {difficulty}</div>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>{persona.name}</span>
+          <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{primaryModeLabel}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>SCENARIO</span>
-            <div style={{ width: 120, height: 5, background: "rgba(255,255,255,0.08)", borderRadius: 99, overflow: "hidden" }}>
-              <div style={{ width: `${progress * 100}%`, height: "100%", background: "linear-gradient(90deg,#2DD4BF,#8B7DFB)" }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 500 }} className="rc-mono">{Math.round(progress * 100)}%</span>
-          </div>
-          <div style={{ width: 1, height: 18, background: "var(--line)" }} />
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }} className="rc-mono">
-            <Icons.clock size={12} />
-            <span style={{ color: "#5EEAD4" }}>{formatTime(elapsed)}</span>
-            <span style={{ color: "var(--ink-3)" }}>/ 05:00</span>
-          </div>
-        </div>
+        <span style={{ fontSize: 14, color: "var(--ink-2)" }} className="rc-mono">{formatTime(elapsed)}</span>
       </div>
 
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 360px", minHeight: 0 }}>
@@ -709,13 +684,6 @@ function CallPageContent() {
                     <div style={{ fontSize: 13.5, fontWeight: 600 }}>{persona.name}</div>
                     <div style={{ fontSize: 11, color: "var(--ink-2)" }}>{persona.role} · {persona.age}</div>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <div className="rc-pill warn">
-                    <span style={{ width: 6, height: 6, borderRadius: 99, background: "#FCD34D", display: "inline-block" }} />
-                    {persona.mood}
-                  </div>
-                  <div className="rc-pill">{persona.traits[0] || "Conversational"}</div>
                 </div>
               </div>
 
@@ -783,11 +751,6 @@ function CallPageContent() {
               <CtrlBtn icon={store.isMuted ? <Icons.micOff size={18} /> : <Icons.mic size={18} />} label={store.isMuted ? "Unmute" : "Mute"} onClick={store.toggleMute} tone={store.isMuted ? "amber" : undefined} />
               {isVideoMode && <CtrlBtn icon={store.isCameraOff ? <Icons.camOff size={18} /> : <Icons.cam size={18} />} label={store.isCameraOff ? "Camera off" : "Camera"} onClick={store.toggleCamera} />}
               <CtrlBtn icon={<Icons.hint size={18} />} label="Hint" tone="violet" onClick={handleUseSuggestedResponse} disabled={!liveCoaching?.suggested_response} />
-              <CtrlBtn icon={<Icons.bookmark size={18} />} label="Mark" />
-              <CtrlBtn icon={<Icons.pause size={18} />} label={isTextMode ? "Hold" : "Pause"} />
-              <div style={{ width: 1, height: 32, background: "var(--line)" }} />
-              <CtrlBtn icon={<Icons.retry size={18} />} label={isTextMode ? "Reword" : "Replay"} onClick={() => latestPatientLine && void playPersonaVoice(latestPatientLine.text)} disabled={!latestPatientLine || isPlayingVoice} />
-              {!isTextMode && <CtrlBtn icon={<Icons.warn size={18} />} label="Emergency" tone="amber" onClick={() => store.triggerCriticalMoment(liveCoaching?.next_best_action || "Shift immediately into safety-focused triage.")} />}
               <button className="rc-btn danger" style={{ padding: "10px 16px", borderRadius: 14, marginLeft: 6 }} onClick={handleEndCall}>
                 <Icons.phone size={16} /> {isTextMode ? "End chat" : "End call"}
               </button>
@@ -797,12 +760,7 @@ function CallPageContent() {
 
         <div style={{ background: "rgba(10,14,26,0.7)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", backdropFilter: "blur(20px)" }}>
           <div style={{ padding: "14px 16px 0", borderBottom: "1px solid var(--line)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div className="rc-label">Coaching</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5EEAD4" }}>
-                <Icons.sparkle size={10} /> Backend Agent
-              </div>
-            </div>
+<div className="rc-label" style={{ marginBottom: 12 }}>Coaching</div>
             <div style={{ display: "flex", gap: 2 }}>
               {TABS.map((tab, index) => (
                 <div key={tab} onClick={() => setActiveTab(index)} style={{ padding: "8px 11px", fontSize: 12, fontWeight: index === activeTab ? 600 : 500, color: index === activeTab ? "var(--ink-0)" : "var(--ink-2)", borderBottom: index === activeTab ? "2px solid #8B7DFB" : "2px solid transparent", marginBottom: -1, cursor: "pointer" }}>{tab}</div>
@@ -835,6 +793,11 @@ function CallPageContent() {
                     {line}
                   </div>
                 ))}
+                {liveCoaching?.suggested_response && (
+                  <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 13, lineHeight: 1.5, fontStyle: "italic", marginTop: 8 }}>
+                    {liveCoaching.suggested_response}
+                  </div>
+                )}
               </div>
             )}
 
@@ -849,117 +812,9 @@ function CallPageContent() {
                 ))}
               </div>
             )}
-
-            {activeTab === 2 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, overflow: "auto" }}>
-                {store.rubric?.items?.map((item) => (
-                  <div key={item.name} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: item.is_hot ? "#FCA5A5" : "var(--ink-0)" }}>{item.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{item.weight}%</div>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>{item.description}</div>
-                  </div>
-                ))}
-                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 12.5, lineHeight: 1.5 }}>
-                  Active risk cues: {liveCoaching?.risk_cue_count ?? coachingStats.riskCues}. Hot criteria should get priority over routine flow.
-                </div>
-              </div>
-            )}
-
-            {activeTab === 3 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, overflow: "auto" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {isTextMode ? (
-                    <>
-                      <Signal label="Clarity" v={liveCoaching?.clarity_estimate ?? 68} tone="ok" />
-                      <Signal label="Empathy" v={liveCoaching?.empathy_estimate ?? 68} tone="teal" />
-                      <Signal label="Turn-taking" v={liveCoaching?.turn_taking_estimate ?? 68} tone="violet" />
-                      <Signal label="Risk cues" v={Math.min(100, (liveCoaching?.risk_cue_count ?? coachingStats.riskCues) * 28)} tone={coachingStats.riskCues ? "bad" : "warn"} raw={`${liveCoaching?.risk_cue_count ?? coachingStats.riskCues}`} />
-                    </>
-                  ) : (
-                    <>
-                      {!isPhoneMode && <Signal label="Eye contact" v={(store.liveSignals.eye_contact_estimate || 0) * 100} tone="warn" />}
-                      <Signal label="Pace" v={Math.max(0, Math.min(100, 100 - Math.abs(store.liveAudioSignals.speaking_pace_wpm - 145)))} tone="warn" raw={`${store.liveAudioSignals.speaking_pace_wpm} wpm`} />
-                      {!isPhoneMode && <Signal label="Engagement" v={(store.liveSignals.facial_engagement_estimate || 0) * 100} tone="ok" />}
-                      <Signal label="Turn-taking" v={liveCoaching?.turn_taking_estimate ?? 68} tone="violet" />
-                    </>
-                  )}
-                </div>
-                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 12.5, lineHeight: 1.55 }}>
-                  <div style={{ marginBottom: 6 }}>Pause count: {store.liveAudioSignals.pause_count} · Longest pause: {store.liveAudioSignals.longest_pause_s}s · Fillers: {store.liveAudioSignals.filler_word_count}</div>
-                  {!isPhoneMode && !isTextMode && <div>{store.liveSignals.privacy_notice}</div>}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 4 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, overflow: "auto" }}>
-                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)" }}>
-                  <div className="rc-label" style={{ marginBottom: 8 }}>Next best action</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.55 }}>{liveCoaching?.next_best_action || "Keep the trainee grounded on one clear next step."}</div>
-                </div>
-                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)" }}>
-                  <div className="rc-label" style={{ marginBottom: 8 }}>Suggested phrasing</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.55, fontStyle: "italic" }}>
-                    "{liveCoaching?.suggested_response || "I want to make sure I understood you correctly before I guide the next step."}"
-                  </div>
-                  <button className="rc-btn sm primary" style={{ marginTop: 10 }} onClick={handleUseSuggestedResponse}>Load into composer</button>
-                </div>
-              </div>
-            )}
-
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-              <div className="rc-label" style={{ marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
-                <span>{isTextMode ? "Written coaching" : isPhoneMode ? "Audio signals" : isVoiceMode ? "Voice signals" : "Nonverbal signals"}</span>
-                <span style={{ fontSize: 10, color: "var(--ink-3)", textTransform: "none", letterSpacing: "normal" }}>{isTextMode ? "backend estimates" : "live coaching estimates"}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {isTextMode ? (
-                  <>
-                    <Signal label="Clarity" v={liveCoaching?.clarity_estimate ?? 68} tone="ok" />
-                    <Signal label="Empathy" v={liveCoaching?.empathy_estimate ?? 68} tone="teal" />
-                    <Signal label="Structure" v={Math.min(95, 55 + coachingStats.avgWords)} tone="violet" />
-                    <Signal label="Risk cues" v={Math.min(100, (liveCoaching?.risk_cue_count ?? coachingStats.riskCues) * 28)} tone={coachingStats.riskCues ? "bad" : "warn"} raw={`${liveCoaching?.risk_cue_count ?? coachingStats.riskCues}`} />
-                  </>
-                ) : (
-                  <>
-                    {!isPhoneMode && <Signal label="Eye contact" v={(store.liveSignals.eye_contact_estimate || 0) * 100} tone="warn" />}
-                    <Signal label="Pace" v={Math.max(0, Math.min(100, 100 - Math.abs(store.liveAudioSignals.speaking_pace_wpm - 145)))} tone="warn" raw={`${store.liveAudioSignals.speaking_pace_wpm} wpm`} />
-                    {!isPhoneMode && <Signal label="Engagement" v={(store.liveSignals.facial_engagement_estimate || 0) * 100} tone="ok" />}
-                    <Signal label="Turn-taking" v={liveCoaching?.turn_taking_estimate ?? 68} tone="violet" />
-                  </>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 14, fontSize: 10.5, color: "var(--ink-3)", marginTop: 10 }} className="rc-mono">
-                {isTextMode
-                  ? <><span>{coachingStats.userTurns} replies</span><span>·</span><span>{coachingStats.avgWords} avg words</span><span>·</span><span>{liveCoaching?.risk_cue_count ?? coachingStats.riskCues} risk cues</span></>
-                  : <><span>{coachingStats.userTurns} trainee turns</span><span>·</span><span>{coachingStats.patientTurns} persona turns</span><span>·</span><span>{store.liveAudioSignals.filler_word_count} fillers</span></>}
-              </div>
-            </div>
           </div>
         </div>
       </div>
-
-      {!isTextMode && (
-        <div style={{ position: "absolute", bottom: 188, left: 22, width: 380, padding: "12px 14px", borderRadius: 14, background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", boxShadow: "0 12px 30px -10px rgba(0,0,0,0.6)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div className="rc-label" style={{ fontSize: 9.5 }}>Live transcript</div>
-            <div className="rc-pill" style={{ fontSize: 10 }}>
-              <Icons.dot /> Auto-scroll
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, fontSize: 12 }}>
-            {visibleTranscript.slice(-4).map((line, index) => (
-              <div key={`${line.timestamp}-${index}`} style={{ display: "flex", gap: 8 }}>
-                <span style={{ fontSize: 10, color: "var(--ink-3)", width: 32, flexShrink: 0, paddingTop: 1 }} className="rc-mono">{line.timestamp}</span>
-                <span style={{ color: line.speaker === "patient" ? "#FCD34D" : "#5EEAD4", fontWeight: 500, width: 54, flexShrink: 0, fontSize: 11.5 }}>{line.speaker === "patient" ? "Agent:" : "You:"}</span>
-                <span style={{ color: "var(--ink-1)", lineHeight: 1.4 }}>{line.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
