@@ -6,16 +6,14 @@ import { useSimulationStore } from "@/stores/simulationStore";
 export function useVideoSignals(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   sessionId: string,
-  enabled: boolean,
+  enabled = true,
 ) {
   const store = useSimulationStore();
   const frameIndex = useRef(0);
   const inFlightRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+    if (!enabled) return;
 
     const id = setInterval(async () => {
       if (inFlightRef.current) return;
@@ -48,5 +46,5 @@ export function useVideoSignals(
     }, 1200);
 
     return () => clearInterval(id);
-  }, [enabled, videoRef, sessionId, store]);
+  }, [videoRef, sessionId, store, enabled]);
 }

@@ -9,6 +9,34 @@ const DEFAULT_BACKEND_CANDIDATES = [
   "http://localhost:8001",
 ].filter(Boolean) as string[];
 
+type BufferedUpstream = {
+  status: number;
+  statusText: string;
+  contentType: string | null;
+  body: ArrayBuffer;
+};
+
+async function bufferUpstreamResponse(upstream: Response): Promise<BufferedUpstream> {
+  return {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    contentType: upstream.headers.get("content-type"),
+    body: await upstream.arrayBuffer(),
+  };
+}
+
+function responseFromBuffered(buffered: BufferedUpstream): Response {
+  const responseHeaders = new Headers();
+  if (buffered.contentType) {
+    responseHeaders.set("content-type", buffered.contentType);
+  }
+  return new Response(buffered.body, {
+    status: buffered.status,
+    statusText: buffered.statusText,
+    headers: responseHeaders,
+  });
+}
+
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
   const pathname = path.join("/");
@@ -19,6 +47,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
       : await request.arrayBuffer();
 
   let lastError: unknown;
+  let lastUpstream: BufferedUpstream | null = null;
 
   for (const baseUrl of DEFAULT_BACKEND_CANDIDATES) {
     const target = `${baseUrl.replace(/\/$/, "")}/${pathname}${query}`;
@@ -34,23 +63,18 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
 
       if (upstream.status >= 500) {
         lastError = new Error(`Upstream ${upstream.status} from ${baseUrl}`);
+        lastUpstream = await bufferUpstreamResponse(upstream);
         continue;
       }
 
-      const responseHeaders = new Headers();
-      const contentType = upstream.headers.get("content-type");
-      if (contentType) {
-        responseHeaders.set("content-type", contentType);
-      }
-
-      return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers: responseHeaders,
-      });
+      return responseFromBuffered(await bufferUpstreamResponse(upstream));
     } catch (error) {
       lastError = error;
     }
+  }
+
+  if (lastUpstream) {
+    return responseFromBuffered(lastUpstream);
   }
 
   return Response.json(
