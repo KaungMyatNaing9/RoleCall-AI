@@ -40,12 +40,6 @@ export const api = {
   generateRubric: (body: object) =>
     request<RubricResponse>("/rubrics/generate", { method: "POST", body: JSON.stringify(body) }),
 
-  createAgent: (body: object) =>
-    request<CreateAgentResponse>("/simulations/create-agent", { method: "POST", body: JSON.stringify(body) }),
-
-  getSignedUrl: (agentId: string) =>
-    request<SignedUrlResponse>(`/simulations/signed-url/${agentId}`),
-
   simulationRespond: (body: object) =>
     request<SimulationTurn>("/simulations/respond", { method: "POST", body: JSON.stringify(body) }),
 
@@ -61,7 +55,7 @@ export const api = {
   generateEvaluation: (body: object) =>
     request<EvaluationReport>("/evaluations/generate", { method: "POST", body: JSON.stringify(body) }),
 
-  synthesizeVoice: (body: { text: string; persona_name?: string; voice_style?: string; voice_id?: string }) =>
+  synthesizeVoice: (body: { text: string; persona_id?: string; persona_name?: string; voice_style?: string; voice_id?: string }) =>
     requestBlob("/voice/synthesize", { method: "POST", body: JSON.stringify(body) }),
 };
 
@@ -70,6 +64,7 @@ export interface PersonaResponse {
   id: string;
   name: string;
   age: number;
+  gender?: string;
   role: string;
   mood: string;
   traits: string[];
@@ -117,6 +112,7 @@ export interface TranscriptEntry {
 export interface SimulationTurn {
   session_id: string;
   turn_index: number;
+  phase: string;
   entry: TranscriptEntry;
   call_ended: boolean;
   audio_signals: AudioSignals;
@@ -132,6 +128,8 @@ export interface VideoSignals {
   speaking_pace_wpm: number;
   interruption_count: number;
   filler_word_count: number;
+  analysis_source: string;
+  confidence: number;
   privacy_notice: string;
 }
 
@@ -144,9 +142,12 @@ export interface AudioSignals {
   interruption_count: number;
   avg_response_time_s: number;
   total_speaking_time_s: number;
+  analysis_source: string;
+  confidence: number;
 }
 
 export interface LiveCoaching {
+  phase: string;
   summary: string;
   next_best_action: string;
   suggested_response: string;
@@ -197,12 +198,12 @@ export interface MultimodalInsightItem {
   tone: "ok" | "warn" | "bad";
 }
 
-export interface CreateAgentResponse {
-  agent_id: string;
-}
-
-export interface SignedUrlResponse {
-  signed_url: string;
+export interface ModalityContribution {
+  modality: string;
+  weight_pct: number;
+  used_in_scoring: boolean;
+  confidence_pct?: number;
+  note?: string;
 }
 
 export interface EvaluationReport {
@@ -212,6 +213,7 @@ export interface EvaluationReport {
   key_moments: KeyMoment[];
   annotated_transcript: AnnotatedTurn[];
   multimodal_insights: MultimodalInsightItem[];
+  modality_contributions: ModalityContribution[];
   coach_feedback: CoachFeedback;
   next_practice: Array<{ persona: string; name: string; difficulty: string; description: string; why: string }>;
   privacy_notice: string;

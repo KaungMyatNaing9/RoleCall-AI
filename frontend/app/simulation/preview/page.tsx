@@ -7,6 +7,7 @@ import { Icons } from "@/components/icons";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
 import { api } from "@/lib/apiClient";
+import { MODE_SPECIFIC_EVALUATION_CRITERIA } from "@/lib/constants";
 import { useSimulationStore } from "@/stores/simulationStore";
 
 const MOCK_LOG = [
@@ -23,15 +24,20 @@ const MODE_OPTIONS = [
   { id: "text", label: "Text / chat", short: "Written replies", icon: <Icons.chat size={10} /> },
 ] as const;
 
+type ModeId = (typeof MODE_OPTIONS)[number]["id"];
+
 export default function PreviewPage() {
   const router = useRouter();
-  const { persona, scenario, rubric, mode, agentLog, setMode } = useSimulationStore();
+  const { persona, scenario, rubric, mode, agentLog, evaluationFocus, setMode, setRubric } = useSimulationStore();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [isRefreshingRubric, setIsRefreshingRubric] = useState(false);
+  const [rubricError, setRubricError] = useState("");
 
   const p = persona || {
+    id: "persona-margaret-001",
     name: "Margaret Lewis", age: 72, role: "Post-discharge patient", mood: "worried",
     traits: ["polite", "hesitant", "apologetic"], goal: "Understand new medication instructions",
     hidden_red_flag: "Chest tightness — reveals only if asked about symptoms or after ~2 min",
@@ -39,6 +45,7 @@ export default function PreviewPage() {
     voice_style: "Elderly, calm, slightly anxious — light tremor",
     opening_line: "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
     avatar_preset: "margaret",
+    sample_lines: [],
   };
   const s = scenario || { title: "Post-surgery follow-up call", description: "Margaret was discharged 36 hours ago. She'll call confused about her medication, but her real concern (chest tightness) only surfaces if you ask the right questions.", your_role: "Care coordinator", duration: "~5 min", objective: "Verify ID, identify urgent concerns, escalate", success_condition: "Patient is safely escalated", difficulty: "Medium" };
   const r = rubric || { items: [
@@ -50,10 +57,18 @@ export default function PreviewPage() {
     { name: "Clarity of next steps", weight: 10, is_hot: false },
     { name: "Nonverbal engagement", weight: 10, is_hot: false },
   ]};
-  const resolvedMode = mode || "video";
+  const resolvedMode: ModeId = (mode as ModeId) || "video";
   const selectedModeOption = MODE_OPTIONS.find((option) => option.id === resolvedMode) || MODE_OPTIONS[2];
   const resolvedAgentLog = agentLog.length ? agentLog : MOCK_LOG;
   const openingLineDuration = Math.max(3, Math.round(p.opening_line.split(" ").length / 2.8));
+  const modeSpecificAdds: string[] = [...(MODE_SPECIFIC_EVALUATION_CRITERIA[resolvedMode] ?? [])];
+  const modeSpecificRemovals: string[] = Array.from(
+    new Set(
+      Object.entries(MODE_SPECIFIC_EVALUATION_CRITERIA)
+        .filter(([key]) => key !== resolvedMode)
+        .flatMap(([, items]) => items)
+    )
+  ).filter((item) => !modeSpecificAdds.includes(item));
   const modeMeta = resolvedMode === "voice"
     ? {
         label: "Web voice",
@@ -121,6 +136,29 @@ export default function PreviewPage() {
     };
   }, []);
 
+  const handleModeSelect = async (nextMode: ModeId) => {
+    setMode(nextMode);
+    if (!scenario?.id) {
+      return;
+    }
+    try {
+      setRubricError("");
+      setIsRefreshingRubric(true);
+      const nextRubric = await api.generateRubric({
+        scenario_id: scenario.id,
+        industry: scenario.industry || "Healthcare",
+        difficulty: scenario.difficulty || "Medium",
+        mode: nextMode,
+        evaluation_focus: evaluationFocus,
+      });
+      setRubric(nextRubric);
+    } catch (error) {
+      setRubricError(error instanceof Error ? error.message : "Rubric refresh failed.");
+    } finally {
+      setIsRefreshingRubric(false);
+    }
+  };
+
   const handlePlayVoice = async () => {
     try {
       setVoiceError("");
@@ -135,6 +173,7 @@ export default function PreviewPage() {
 
       const blob = await api.synthesizeVoice({
         text: p.opening_line,
+        persona_id: p.id,
         persona_name: p.name,
         voice_style: p.voice_style,
       });
@@ -242,7 +281,29 @@ export default function PreviewPage() {
             <div className="rc-glass" style={{ padding: 16, display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div className="rc-label">Evaluation rubric</div>
-                <button style={{ fontSize: 11, color: "var(--ink-2)", background: "none", border: "none", cursor: "pointer" }}>Edit ↗</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {isRefreshingRubric && <div style={{ fontSize: 11, color: "var(--ink-3)" }}>Refreshing for {modeMeta.label.toLowerCase()}…</div>}
+                  <button style={{ fontSize: 11, color: "var(--ink-2)", background: "none", border: "none", cursor: "pointer" }}>Edit ↗</button>
+                </div>
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(79,124,255,0.06)", border: "1px solid rgba(79,124,255,0.22)", marginBottom: 12 }}>
+                <div style={{ fontSize: 10.5, color: "var(--ink-3)", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 6 }}>
+                  Mode-specific rubric adjustment
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-1)", lineHeight: 1.55 }}>
+                  {modeSpecificAdds.length > 0 ? (
+                    <div>
+                      <strong style={{ color: "#93B4FF" }}>{modeMeta.label} adds:</strong> {modeSpecificAdds.join(", ")}
+                    </div>
+                  ) : (
+                    <div>
+                      <strong style={{ color: "#93B4FF" }}>{modeMeta.label} adds:</strong> no extra mode-specific criteria
+                    </div>
+                  )}
+                  <div style={{ marginTop: 4 }}>
+                    <strong style={{ color: "#FCD34D" }}>{modeMeta.label} removes or skips:</strong> {modeSpecificRemovals.join(", ")}
+                  </div>
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {r.items.map((item: any) => (
@@ -255,6 +316,7 @@ export default function PreviewPage() {
                   </div>
                 ))}
               </div>
+              {rubricError && <div style={{ marginTop: 10, fontSize: 11, color: "#FCA5A5" }}>{rubricError}</div>}
             </div>
           </div>
 
@@ -271,7 +333,7 @@ export default function PreviewPage() {
                   return (
                     <button
                       key={option.id}
-                      onClick={() => setMode(option.id)}
+                      onClick={() => void handleModeSelect(option.id)}
                       style={{
                         textAlign: "left",
                         padding: "10px 12px",

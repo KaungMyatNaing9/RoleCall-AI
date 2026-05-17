@@ -13,7 +13,6 @@ const STEPS = [
   { n: 2, t: "Persona" },
   { n: 3, t: "Difficulty" },
   { n: 4, t: "Evaluation" },
-  { n: 5, t: "Training Mode" },
 ];
 
 const INDUSTRIES = [
@@ -45,10 +44,10 @@ export default function CreatePage() {
   const [difficulty, setDifficulty] = useState("Medium");
   const [sliders, setSliders] = useState({ emotional_intensity: 0.4, interruptions: 0.25, hidden_agenda: 0.6, patience: 0.7, escalation_risk: 0.55 });
   const [toggles, setToggles] = useState({ hidden_red_flag: true, random_surprise: true, light_accent: false });
-  const [evalFocus, setEvalFocus] = useState(["Empathy", "Clarity", "Active listening", "Escalation", "Nonverbal presence", "Eye-contact estimate"]);
+  const [evalFocus, setEvalFocus] = useState(["Empathy", "Clarity", "Active listening", "Escalation", "Turn-taking"]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
-  const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "agent" | "done">("idle");
+  const [agentStatus, setAgentStatus] = useState<"idle" | "persona" | "scenario" | "rubric" | "done">("idle");
 
   const suggestions = ["Angry customer demanding refund", "Bank scammer targeting older adult", "Recruiter for SWE intern", "Parent upset about grades"];
 
@@ -60,32 +59,42 @@ export default function CreatePage() {
     setIsGenerating(true);
     setGenerateError("");
     try {
-      store.setMode("video");
       store.setIndustry(selectedIndustry);
       store.setPersonaPrompt(prompt);
       store.setDifficulty(difficulty);
       store.setEvaluationFocus(evalFocus);
 
       setAgentStatus("persona");
-      const persona = await api.generatePersona({ prompt, industry: selectedIndustry, difficulty });
+      const persona = await api.generatePersona({
+        prompt,
+        industry: selectedIndustry,
+        difficulty,
+        behavior_sliders: sliders,
+        behavior_toggles: toggles,
+      });
       store.setPersona(persona);
 
       setAgentStatus("scenario");
-      const scenario = await api.generateScenario({ persona_id: persona.id, industry: selectedIndustry, difficulty, mode: "adaptive" });
+      const scenario = await api.generateScenario({
+        persona_id: persona.id,
+        industry: selectedIndustry,
+        difficulty,
+        mode: "adaptive",
+        behavior_sliders: sliders,
+        behavior_toggles: toggles,
+      });
       store.setScenario(scenario);
 
       setAgentStatus("rubric");
-      const rubric = await api.generateRubric({ scenario_id: scenario.id, industry: selectedIndustry, evaluation_focus: evalFocus });
+      const rubric = await api.generateRubric({
+        scenario_id: scenario.id,
+        industry: selectedIndustry,
+        difficulty,
+        mode: "adaptive",
+        evaluation_focus: evalFocus,
+      });
       store.setRubric(rubric);
       store.setSimulationId(`session-${Date.now()}`);
-
-      setAgentStatus("agent");
-      try {
-        const agentResult = await api.createAgent({ persona, scenario, rubric });
-        store.setAgentId(agentResult.agent_id);
-      } catch (err) {
-        console.warn("ElevenLabs agent creation failed:", err);
-      }
 
       setAgentStatus("done");
       setTimeout(() => router.push("/simulation/preview"), 400);
@@ -102,7 +111,7 @@ export default function CreatePage() {
     { n: "Persona Generator", s: agentStatus === "persona" ? "working" : agentStatus === "idle" ? "queued" : "done", i: <Icons.user size={11} /> },
     { n: "Scenario Builder", s: agentStatus === "scenario" ? "working" : ["idle", "persona"].includes(agentStatus) ? "queued" : "done", i: <Icons.flag size={11} /> },
     { n: "Rubric Agent", s: agentStatus === "rubric" ? "working" : ["idle", "persona", "scenario"].includes(agentStatus) ? "queued" : "done", i: <Icons.check size={11} /> },
-    { n: "ElevenLabs Agent", s: agentStatus === "agent" ? "working" : ["idle", "persona", "scenario", "rubric"].includes(agentStatus) ? "queued" : "done", i: <Icons.mic size={11} /> },
+    { n: "Simulation Agent", s: agentStatus === "done" ? "done" : ["idle", "persona", "scenario", "rubric"].includes(agentStatus) ? "queued" : "working", i: <Icons.mic size={11} /> },
   ];
 
   return (
@@ -219,11 +228,23 @@ export default function CreatePage() {
             </div>
             {SLIDERS.map(s => (
               <div key={s.l} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-2)", marginBottom: 5 }}><span>{s.l}</span></div>
-                <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 99, position: "relative" }}>
-                  <div style={{ height: "100%", width: `${(sliders as any)[s.k] * 100}%`, borderRadius: 99, background: s.tone === "warn" ? "linear-gradient(90deg,#FBBF24,#F59E0B)" : "linear-gradient(90deg,#2DD4BF,#8B7DFB)" }} />
-                  <div style={{ position: "absolute", left: `calc(${(sliders as any)[s.k] * 100}% - 6px)`, top: -3, width: 12, height: 12, borderRadius: 99, background: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.4)", cursor: "pointer" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--ink-2)", marginBottom: 5 }}>
+                  <span>{s.l}</span>
+                  <span className="rc-mono">{Math.round((sliders as any)[s.k] * 100)}</span>
                 </div>
+                <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 99, position: "relative", marginBottom: 8 }}>
+                  <div style={{ height: "100%", width: `${(sliders as any)[s.k] * 100}%`, borderRadius: 99, background: s.tone === "warn" ? "linear-gradient(90deg,#FBBF24,#F59E0B)" : "linear-gradient(90deg,#2DD4BF,#8B7DFB)" }} />
+                  <div style={{ position: "absolute", left: `calc(${(sliders as any)[s.k] * 100}% - 6px)`, top: -3, width: 12, height: 12, borderRadius: 99, background: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.4)", pointerEvents: "none" }} />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round((sliders as any)[s.k] * 100)}
+                  onChange={(e) => setSliders((prev) => ({ ...prev, [s.k]: Number(e.target.value) / 100 }))}
+                  style={{ width: "100%" }}
+                />
               </div>
             ))}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -243,6 +264,9 @@ export default function CreatePage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div className="rc-label">Step 4 · Evaluation focus</div>
               <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{evalFocus.length} of {EVALUATION_CRITERIA.length}</div>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5, marginBottom: 10 }}>
+              This step only shows mode-neutral coaching priorities. Camera- or voice-specific criteria are added later after you choose phone, voice, video, or text on the preview screen.
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {EVALUATION_CRITERIA.map(c => {
