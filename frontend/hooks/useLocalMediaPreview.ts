@@ -69,3 +69,7 @@ export function useLocalMediaPreview(needs: { video: boolean; audio: boolean }) 
     isReady: status === "ready",
   };
 }
+
+export function stopLocalMediaPreview() {
+  cameraStreamRef.stop();
+}

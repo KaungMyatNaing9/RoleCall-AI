@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { api } from "@/lib/apiClient";
+import { cameraStreamRef } from "@/lib/cameraStream";
 import { finalizeSessionSignals } from "@/lib/finalizeSession";
 
 export default function AnalyzingPage() {
@@ -14,6 +15,8 @@ export default function AnalyzingPage() {
   storeRef.current = store;
 
   useEffect(() => {
+    cameraStreamRef.stop();
+
     const s = storeRef.current;
     const sessionId = s.simulationId || `session-${Date.now()}`;
 

@@ -1,20 +1,16 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { Icons } from "@/components/icons";
 import { useSimulationStore } from "@/stores/simulationStore";
-import { cameraStreamRef } from "@/lib/cameraStream";
-import { useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
+import { stopLocalMediaPreview, useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
 import { PRIVACY_NOTICE } from "@/lib/constants";
 
 export default function SetupPage() {
   const router = useRouter();
-  const videoRef = useRef<HTMLVideoElement>(null);
   const joiningRef = useRef(false);
-  const [camOk, setCamOk] = useState(false);
-  const [camError, setCamError] = useState(false);
   const store = useSimulationStore();
   const personaName = store.persona?.name || "Your practice partner";
   const mode = store.mode || "video";
@@ -30,38 +26,10 @@ export default function SetupPage() {
   });
 
   useEffect(() => {
-    if (!isVideoMode && !isVoiceMode) {
-      setCamOk(false);
-      setCamError(false);
-      return;
-    }
-    let stream: MediaStream | null = null;
-    const existing = cameraStreamRef.get();
-    if (existing) {
-      existing.getTracks().forEach((track) => track.stop());
-      cameraStreamRef.set(null);
-    }
-    navigator.mediaDevices.getUserMedia({ video: isVideoMode ? { width: 1280, height: 720, facingMode: "user" } : false, audio: true })
-      .then(s => {
-        stream = s;
-        cameraStreamRef.set(s);
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          void videoRef.current.play().catch(() => {});
-        }
-        setCamOk(true);
-      })
-      .catch(() => setCamError(true));
-
     return () => {
-      if (stream && !joiningRef.current) {
-        stream.getTracks().forEach(t => t.stop());
-        if (cameraStreamRef.get() === stream) {
-          cameraStreamRef.set(null);
-        }
-      }
+      stopLocalMediaPreview();
     };
-  }, [isVideoMode, isVoiceMode]);
+  }, []);
 
   const handleJoin = () => {
     joiningRef.current = true;

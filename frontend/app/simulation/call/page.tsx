@@ -9,7 +9,7 @@ import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 
-import { cameraStreamRef } from "@/lib/cameraStream";
+import { attachStreamToVideo, cameraStreamRef, ensureLocalMedia } from "@/lib/cameraStream";
 import {
   api,
   type SimulationTurn,
@@ -305,6 +305,10 @@ function CallPageInner() {
   }, [visibleTranscript]);
 
   const goToAnalyzing = useCallback(() => {
+    cameraStreamRef.stop();
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     store.endCall();
     store.setSessionDurationS(Math.floor((Date.now() - startTimeRef.current) / 1000));
     router.push("/analyzing");
@@ -453,15 +457,33 @@ function CallPageInner() {
   }, [interimTranscript]);
 
   useEffect(() => {
-    const stream = cameraStreamRef.get();
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-      setHasVideoStream(true);
-      void videoRef.current.play().catch(() => {});
-      return;
+    let cancelled = false;
+
+    async function bindCallMedia() {
+      if (!isVideoMode || !videoRef.current || store.isCameraOff) {
+        setHasVideoStream(false);
+        return;
+      }
+
+      try {
+        const stream = await ensureLocalMedia({ video: true, audio: true });
+        if (cancelled || !videoRef.current) return;
+        await attachStreamToVideo(videoRef.current, stream);
+        if (cancelled) return;
+        setHasVideoStream(true);
+      } catch {
+        if (!cancelled) {
+          setHasVideoStream(false);
+        }
+      }
     }
-    setHasVideoStream(false);
-  }, []);
+
+    void bindCallMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isVideoMode, store.isCameraOff]);
 
   useEffect(() => {
     const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
@@ -471,6 +493,10 @@ function CallPageInner() {
   useEffect(() => {
     return () => {
       stopListening();
+      cameraStreamRef.stop();
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
       if (audioRef.current) {
         audioRef.current.pause();
       }
