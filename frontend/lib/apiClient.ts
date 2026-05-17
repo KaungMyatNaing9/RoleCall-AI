@@ -46,6 +46,9 @@ export const api = {
   getSignedUrl: (agentId: string) =>
     request<SignedUrlResponse>(`/simulations/signed-url/${agentId}`),
 
+  getSessionTranscript: (sessionId: string) =>
+    request<Array<{ speaker: string; text: string }>>(`/simulations/transcript/${sessionId}`),
+
   simulationRespond: (body: object) =>
     request<SimulationTurn>("/simulations/respond", { method: "POST", body: JSON.stringify(body) }),
 

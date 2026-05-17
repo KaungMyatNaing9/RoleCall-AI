@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { api } from "@/lib/apiClient";
+import { finalizeSessionSignals } from "@/lib/finalizeSession";
 
 export default function AnalyzingPage() {
   const router = useRouter();
@@ -16,19 +17,53 @@ export default function AnalyzingPage() {
     const s = storeRef.current;
     const sessionId = s.simulationId || `session-${Date.now()}`;
 
-    api
-      .generateEvaluation({
+    async function run() {
+      let transcript = s.transcript.map((entry) => ({
+        speaker: entry.speaker,
+        text: entry.text,
+        timestamp: entry.timestamp,
+      }));
+
+      if (!transcript.length) {
+        try {
+          const remote = await api.getSessionTranscript(sessionId);
+          transcript = remote.map((entry) => ({
+            speaker: entry.speaker,
+            text: entry.text,
+            timestamp: "",
+          }));
+        } catch {
+          // Keep empty transcript; backend may still return a mock report.
+        }
+      }
+
+      if (!s.sessionVideoSignals && !s.sessionAudioSignals) {
+        try {
+          const durationS = Math.max(60, transcript.length * 45);
+          const signals = await finalizeSessionSignals({
+            sessionId,
+            durationS,
+            transcript,
+            consentVideo: s.consentVideoSignals && (s.mode ?? "video") === "video",
+            consentAudio: s.consentAudioSignals,
+          });
+          storeRef.current.setSessionSignals(signals.video, signals.audio);
+        } catch {
+          // Non-fatal if summarize endpoints fail.
+        }
+      }
+
+      return api.generateEvaluation({
         session_id: sessionId,
         persona_id: s.persona?.id ?? "persona-margaret-001",
         scenario_id: s.scenario?.id ?? "scenario-postdischarge-001",
         rubric_id: s.rubric?.id ?? "rubric-healthcare-001",
         mode: s.mode ?? "video",
-        transcript: s.transcript.map((entry) => ({
-          speaker: entry.speaker,
-          text: entry.text,
-          timestamp: entry.timestamp,
-        })),
-      })
+        transcript,
+      });
+    }
+
+    run()
       .then((report) => {
         storeRef.current.setReport(report);
         router.push("/simulation/report");
@@ -74,7 +109,9 @@ export default function AnalyzingPage() {
             }}
           />
           <h1 className="rc-h-2" style={{ margin: 0 }}>Building your report</h1>
-          <p style={{ fontSize: 14, color: "var(--ink-2)", marginTop: 8 }}>This usually takes a few seconds.</p>
+          <p style={{ fontSize: 14, color: "var(--ink-2)", marginTop: 8 }}>
+            Summarizing session signals and coaching feedback…
+          </p>
         </div>
       </main>
     </AppShell>

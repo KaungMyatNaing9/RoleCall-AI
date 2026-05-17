@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { useSimulationStore } from "@/stores/simulationStore";
 import { PRIVACY_NOTICE } from "@/lib/constants";
+import { mergeReportInsights } from "@/lib/signalInsights";
 import type { EvaluationReport } from "@/lib/apiClient";
 
 const MOCK_REPORT: EvaluationReport = {
@@ -75,7 +76,13 @@ const TAG_COLORS: Record<string, string> = {
 
 export default function ReportPage() {
   const storeReport = useSimulationStore((s) => s.report);
+  const sessionVideo = useSimulationStore((s) => s.sessionVideoSignals);
+  const sessionAudio = useSimulationStore((s) => s.sessionAudioSignals);
   const r = storeReport ?? MOCK_REPORT;
+  const multimodalInsights = useMemo(
+    () => mergeReportInsights(r, sessionVideo, sessionAudio),
+    [r, sessionAudio, sessionVideo],
+  );
   const [momentIndex, setMomentIndex] = useState(0);
   const moment = r.key_moments[momentIndex] ?? null;
 
@@ -199,11 +206,11 @@ export default function ReportPage() {
           </div>
         </section>
 
-        {r.multimodal_insights.length > 0 && (
+        {multimodalInsights.length > 0 && (
           <section className="rc-glass" style={{ padding: 18 }}>
             <h2 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Signals</h2>
             <ul style={{ margin: "0 0 12px", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
-              {r.multimodal_insights.map((x) => (
+              {multimodalInsights.map((x) => (
                 <li key={x.label} style={{ fontSize: 14, display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--ink-2)" }}>{x.label}</span>
                   <span style={{ fontWeight: 600 }}>{x.value}</span>

@@ -11,14 +11,17 @@ import { Logo } from "@/components/layout/Logo";
 
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 
-import { cameraStreamRef } from "@/lib/cameraStream";
+import { cameraStreamRef, setVideoTrackEnabled } from "@/lib/cameraStream";
+import { useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
 import {
   api,
   type SimulationTurn,
   type TranscriptEntry,
 } from "@/lib/apiClient";
 import { formatTime } from "@/lib/utils";
+import { finalizeSessionSignals } from "@/lib/finalizeSession";
 import { useVideoSignals } from "@/lib/useVideoSignals";
+import { LiveSignalsPanel } from "@/components/simulation/LiveSignalsPanel";
 
 import { useSimulationStore } from "@/stores/simulationStore";
 
@@ -59,27 +62,55 @@ const MOOD_SET = new Set([
   "confused",
 ]);
 
-const CRITICAL_KEYWORDS = [
-  "chest",
-  "tightness",
-  "pain",
-  "heart",
-  "dizzy",
-  "faint",
-  "bleeding",
-  "breathing",
-  "emergency",
-  "unconscious",
-  "severe",
-  "stroke",
+const CRITICAL_PHRASES = [
+  "chest tightness",
+  "chest pain",
+  "tightness in my chest",
+  "tightness in chest",
   "can't breathe",
-  "shortness",
-  "pressure",
+  "cannot breathe",
+  "can not breathe",
+  "shortness of breath",
+  "trouble breathing",
+  "difficulty breathing",
+  "passed out",
+  "feel faint",
+  "feeling faint",
+  "unconscious",
+  "severe bleeding",
+  "stroke",
+  "heart attack",
+  "allergic reaction",
+  "anaphylaxis",
 ];
 
 function hasCriticalKeyword(text: string): boolean {
   const lower = text.toLowerCase();
-  return CRITICAL_KEYWORDS.some((kw) => lower.includes(kw));
+  return CRITICAL_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+function criticalExcerpt(text: string, maxLen = 140): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, maxLen).trim()}…`;
+}
+
+function buildCriticalCoaching(persona: { hidden_red_flag?: string | null }, excerpt: string) {
+  const flagHint = persona.hidden_red_flag
+    ? persona.hidden_red_flag.split("—")[0].trim()
+    : "a possible clinical red flag";
+  return {
+    summary: "The persona surfaced language that may need urgent follow-up.",
+    next_best_action: `Acknowledge ${flagHint.toLowerCase()}, ask one focused safety question, and escalate if needed.`,
+    suggested_response:
+      "Thank you for telling me that. I want to make sure we handle this safely — can you describe what you're feeling right now?",
+    strengths: [] as string[],
+    warnings: [`Heard: "${criticalExcerpt(excerpt, 80)}"`],
+    clarity_estimate: 0.5,
+    empathy_estimate: 0.5,
+    turn_taking_estimate: 0.5,
+    risk_cue_count: 1,
+  };
 }
 
 function toAvatarPreset(s: string): AvatarPreset {
@@ -98,7 +129,7 @@ function currentTimestamp(startMs: number) {
   return formatTime(elapsed);
 }
 
-const TABS = ["Coaching", "Transcript"] as const;
+const TABS = ["Coaching", "Transcript", "Signals"] as const;
 
 function CtrlBtn({
   icon,
@@ -246,11 +277,11 @@ function CallPageContent() {
   const router = useRouter();
   const store = useSimulationStore();
 
-  const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
   const sessionStartedRef = useRef(false);
+  const stopListeningRef = useRef<() => void>(() => {});
   const startTimeRef = useRef(Date.now());
   const sessionIdRef = useRef(
     store.simulationId || `session-${Date.now()}`
@@ -305,6 +336,12 @@ function CallPageContent() {
   const isVoiceMode = mode === "voice";
   const isPhoneMode = mode === "phone";
   const isTextMode = mode === "text";
+  const useElevenLabs = Boolean(store.agentId) && !isTextMode;
+  const needsCallMedia = isVideoMode || isVoiceMode || isPhoneMode;
+  const localMedia = useLocalMediaPreview({
+    video: isVideoMode,
+    audio: needsCallMedia,
+  });
 
   const latestLine =
     visibleTranscript[visibleTranscript.length - 1];
@@ -317,7 +354,15 @@ function CallPageContent() {
 
   const liveCoaching = store.liveCoaching;
 
-  const conversation = useConversation({
+  const {
+    startSession,
+    endSession,
+    status: voiceAgentStatus,
+    isSpeaking,
+    isListening: agentIsListening,
+    setMuted: setVoiceAgentMuted,
+  } = useConversation({
+    micMuted: store.isMuted,
     onMessage: ({
       message,
       source,
@@ -336,16 +381,25 @@ function CallPageContent() {
       store.addTranscriptEntry(entry);
 
       if (entry.is_critical) {
-        store.triggerCriticalMoment(message);
+        const excerpt = criticalExcerpt(message);
+        store.triggerCriticalMoment(excerpt);
+        if (!useSimulationStore.getState().liveCoaching?.suggested_response) {
+          useSimulationStore.getState().setLiveCoaching(buildCriticalCoaching(persona, excerpt));
+        }
       }
     },
 
     onError: (error: string) => {
       console.error("ElevenLabs error:", error);
+      setErrorMessage(typeof error === "string" ? error : "Voice agent connection error.");
     },
   });
 
-  useVideoSignals(videoRef, sessionIdRef.current);
+  useVideoSignals(
+    localMedia.videoRef,
+    sessionIdRef.current,
+    isVideoMode && store.consentVideoSignals,
+  );
 
   const coachingStats = useMemo(() => {
     const userTurns = visibleTranscript.filter(
@@ -388,9 +442,10 @@ function CallPageContent() {
       store.setLiveCoaching(response.coaching);
 
       if (response.entry.is_critical) {
-        store.triggerCriticalMoment(
-          response.coaching.next_best_action
-        );
+        store.triggerCriticalMoment(criticalExcerpt(response.entry.text));
+        if (response.coaching.suggested_response) {
+          store.setLiveCoaching(response.coaching);
+        }
       }
     },
     [store]
@@ -470,6 +525,32 @@ function CallPageContent() {
     ]
   );
 
+  const goToAnalyzing = useCallback(async () => {
+    stopListeningRef.current();
+    if (useElevenLabs && voiceAgentStatus === "connected") {
+      endSession();
+    }
+    cameraStreamRef.stop();
+    store.endCall();
+
+    const durationS = Math.max(1, Math.floor((Date.now() - startTimeRef.current) / 1000));
+    const transcript = useSimulationStore.getState().transcript;
+    try {
+      const signals = await finalizeSessionSignals({
+        sessionId: sessionIdRef.current,
+        durationS,
+        transcript,
+        consentVideo: store.consentVideoSignals && isVideoMode,
+        consentAudio: store.consentAudioSignals,
+      });
+      store.setSessionSignals(signals.video, signals.audio);
+    } catch {
+      // Non-fatal — report can still generate from transcript.
+    }
+
+    router.push("/analyzing");
+  }, [endSession, isVideoMode, router, store, useElevenLabs, voiceAgentStatus]);
+
   const requestPersonaReply = useCallback(async (userMessage: string, turnIndex: number) => {
     setIsWaitingReply(true);
     setErrorMessage("");
@@ -498,8 +579,7 @@ function CallPageContent() {
 
       if (response.call_ended) {
         setTimeout(() => {
-          store.endCall();
-          router.push("/analyzing");
+          void goToAnalyzing();
         }, 500);
       }
     } catch (error) {
@@ -507,7 +587,7 @@ function CallPageContent() {
     } finally {
       setIsWaitingReply(false);
     }
-  }, [appendTranscript, mode, playPersonaVoice, router, store, syncFeedback]);
+  }, [appendTranscript, goToAnalyzing, mode, playPersonaVoice, store, syncFeedback]);
 
   const submitUserTurn = useCallback(async (rawText: string) => {
     const text = rawText.trim();
@@ -539,6 +619,16 @@ function CallPageContent() {
     },
   });
 
+  stopListeningRef.current = stopListening;
+
+  const handleToggleMute = useCallback(() => {
+    const nextMuted = !store.isMuted;
+    store.toggleMute();
+    if (useElevenLabs && voiceAgentStatus === "connected") {
+      setVoiceAgentMuted(nextMuted);
+    }
+  }, [setVoiceAgentMuted, store, useElevenLabs, voiceAgentStatus]);
+
   useEffect(() => {
     if (interimTranscript) {
       setDraftReply(interimTranscript);
@@ -546,11 +636,9 @@ function CallPageContent() {
   }, [interimTranscript]);
 
   useEffect(() => {
-    const stream = cameraStreamRef.get();
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-    }
-  }, []);
+    if (!isVideoMode || !localMedia.isReady) return;
+    setVideoTrackEnabled(!store.isCameraOff);
+  }, [isVideoMode, localMedia.isReady, store.isCameraOff]);
 
   useEffect(() => {
     const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
@@ -570,13 +658,57 @@ function CallPageContent() {
   }, [stopListening]);
 
   useEffect(() => {
+    if (useElevenLabs && voiceAgentStatus === "connected") {
+      setVoiceAgentMuted(store.isMuted);
+    }
+  }, [setVoiceAgentMuted, store.isMuted, useElevenLabs, voiceAgentStatus]);
+
+  useEffect(() => {
+    if (useElevenLabs && isSpeaking) {
+      setPersonaTalking(true);
+    } else if (useElevenLabs && !isSpeaking && !isPlayingVoice) {
+      setPersonaTalking(false);
+    }
+  }, [isPlayingVoice, isSpeaking, useElevenLabs]);
+
+  useEffect(() => {
     if (sessionStartedRef.current) return;
+    if (needsCallMedia && localMedia.status === "loading") return;
+
     sessionStartedRef.current = true;
     startTimeRef.current = Date.now();
     store.setSimulationId(sessionIdRef.current);
     store.startCall();
+
+    if (useElevenLabs && store.agentId) {
+      void (async () => {
+        try {
+          const { signed_url } = await api.getSignedUrl(store.agentId!);
+          startSession({
+            signedUrl: signed_url,
+            connectionType: "websocket",
+          });
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error
+              ? `${error.message} — using text fallback.`
+              : "Voice agent unavailable — using text fallback.",
+          );
+          void requestPersonaReply("", 0);
+        }
+      })();
+      return;
+    }
+
     void requestPersonaReply("", 0);
-  }, [requestPersonaReply, store]);
+  }, [
+    localMedia.status,
+    needsCallMedia,
+    requestPersonaReply,
+    startSession,
+    store,
+    useElevenLabs,
+  ]);
 
   const handleSend = useCallback(async () => {
     await submitUserTurn(draftReply);
@@ -589,11 +721,8 @@ function CallPageContent() {
   }, [liveCoaching]);
 
   const handleEndCall = useCallback(() => {
-    stopListening();
-    cameraStreamRef.stop();
-    store.endCall();
-    router.push("/analyzing");
-  }, [router, stopListening, store]);
+    void goToAnalyzing();
+  }, [goToAnalyzing]);
 
   const composerHint = isTextMode
     ? "Type your next message..."
@@ -622,6 +751,27 @@ function CallPageContent() {
           <Logo size={20} />
           <span style={{ fontSize: 14, fontWeight: 500 }}>{persona.name}</span>
           <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{primaryModeLabel}</span>
+          {useElevenLabs && (
+            <span
+              style={{
+                fontSize: 11,
+                color:
+                  voiceAgentStatus === "connected"
+                    ? "#6EE7B7"
+                    : voiceAgentStatus === "error"
+                      ? "#FCA5A5"
+                      : "var(--ink-3)",
+              }}
+            >
+              {voiceAgentStatus === "connected"
+                ? "Live voice agent"
+                : voiceAgentStatus === "connecting"
+                  ? "Connecting agent…"
+                  : voiceAgentStatus === "error"
+                    ? "Agent error"
+                    : "Voice agent"}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 14, color: "var(--ink-2)" }} className="rc-mono">{formatTime(elapsed)}</span>
       </div>
@@ -687,27 +837,50 @@ function CallPageContent() {
                 </div>
               </div>
 
-              {latestLine && !isTextMode && (
-                <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", maxWidth: "70%", padding: "12px 18px", background: "rgba(0,0,0,0.65)", borderRadius: 14, border: "1px solid var(--line-2)", backdropFilter: "blur(20px)", fontSize: 14.5, lineHeight: 1.5, fontStyle: "italic", textAlign: "center" }}>
-                  {latestLine.is_critical ? <span style={{ color: "#FCA5A5" }}>"{latestLine.text}"</span> : `"${latestLine.text}"`}
+              {latestLine && !isTextMode && latestLine.speaker === "patient" && (
+                <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", maxWidth: "min(70%, 520px)", padding: "12px 18px", background: "rgba(0,0,0,0.65)", borderRadius: 14, border: latestLine.is_critical ? "1px solid rgba(248,113,113,0.45)" : "1px solid var(--line-2)", backdropFilter: "blur(20px)", fontSize: 14.5, lineHeight: 1.5, fontStyle: "italic", textAlign: "center", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  {latestLine.is_critical ? (
+                    <span style={{ color: "#FCA5A5" }}>&ldquo;{criticalExcerpt(latestLine.text, 180)}&rdquo;</span>
+                  ) : (
+                    <>&ldquo;{criticalExcerpt(latestLine.text, 180)}&rdquo;</>
+                  )}
                 </div>
               )}
 
-              {store.criticalMomentVisible && (
+              {store.criticalMomentVisible && !isTextMode && (
                 <div style={{ position: "absolute", top: 16, right: 16, width: 280, padding: "12px 14px", borderRadius: 12, background: "linear-gradient(180deg, rgba(248,113,113,0.18), rgba(248,113,113,0.06))", border: "1px solid rgba(248,113,113,0.5)", boxShadow: "0 0 30px -5px rgba(248,113,113,0.4)", backdropFilter: "blur(20px)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <div style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(248,113,113,0.25)", display: "grid", placeItems: "center", color: "#FCA5A5" }}>
                       <Icons.warn size={12} />
                     </div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "#FCA5A5", letterSpacing: "0.02em" }}>CRITICAL MOMENT DETECTED</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#FCA5A5", letterSpacing: "0.02em" }}>RED FLAG</div>
                   </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-0)" }}>{store.criticalMomentMessage || "The conversation surfaced a possible risk cue. Shift toward the safest next step."}</div>
+                  <div style={{ fontSize: 12, lineHeight: 1.45, color: "#FCA5A5" }}>See coaching panel for suggested phrasing.</div>
                 </div>
               )}
 
               {isVideoMode && (
                 <div style={{ position: "absolute", bottom: 14, right: 14, width: 200, height: 140, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-2)", background: "linear-gradient(160deg, #1A2540 0%, #0E1A2C 100%)", boxShadow: "0 12px 30px -8px rgba(0,0,0,0.5)" }}>
-                  <video ref={videoRef} autoPlay muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: store.isCameraOff ? 0.2 : 1 }} />
+                  <video
+                    ref={localMedia.videoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      opacity: store.isCameraOff ? 0.2 : localMedia.isReady ? 1 : 0,
+                      transform: "scaleX(-1)",
+                    }}
+                  />
+                  {!localMedia.isReady && (
+                    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 10, fontSize: 10, color: localMedia.status === "error" ? "#FCA5A5" : "var(--ink-2)", textAlign: "center", background: "rgba(0,0,0,0.55)" }}>
+                      {localMedia.errorMessage || "Starting camera…"}
+                    </div>
+                  )}
                   <div style={{ position: "absolute", top: 8, left: 8, fontSize: 10, padding: "2px 7px", background: "rgba(0,0,0,0.55)", borderRadius: 6 }}>You</div>
                 </div>
               )}
@@ -715,6 +888,36 @@ function CallPageContent() {
           </div>
 
           <div style={{ padding: "14px 22px 0" }}>
+            {useElevenLabs && voiceAgentStatus === "connected" ? (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  border: "1px solid rgba(45,212,191,0.25)",
+                  background: "rgba(45,212,191,0.08)",
+                  fontSize: 13,
+                  color: "var(--ink-1)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <p style={{ margin: 0 }}>
+                  Speak naturally — {persona.name} is listening through the live voice agent.
+                  {agentIsListening && !store.isMuted && (
+                    <span style={{ color: "#5EEAD4", marginLeft: 8 }}>● Mic active</span>
+                  )}
+                  {store.isMuted && (
+                    <span style={{ color: "#FCD34D", marginLeft: 8 }}>● Muted</span>
+                  )}
+                </p>
+                <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
+                  Press End call when you are ready for your coaching report.
+                </p>
+              </div>
+            ) : useElevenLabs && voiceAgentStatus === "connecting" ? (
+              <div style={{ padding: "14px 16px", borderRadius: 14, border: "1px solid var(--line)", fontSize: 13, color: "var(--ink-2)" }}>
+                Connecting voice agent…
+              </div>
+            ) : (
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "rgba(0,0,0,0.32)", border: "1px solid var(--line)", borderRadius: 16, padding: 12 }}>
               <div style={{ flex: 1 }}>
                 <textarea
@@ -730,7 +933,9 @@ function CallPageContent() {
                       {isListening ? "Mic live: browser speech recognition is capturing your turn." : "Voice modes can use typed input or browser dictation."}
                     </span>
                   )}
-                  {!isTextMode && !speechSupported && <span>Speech recognition is not available in this browser.</span>}
+                  {!isTextMode && !speechSupported && (
+                    <span>Voice dictation is not available here. Type your message instead.</span>
+                  )}
                   {!isTextMode && speechError && <span style={{ color: "#FCA5A5" }}>{speechError}</span>}
                 </div>
               </div>
@@ -743,12 +948,18 @@ function CallPageContent() {
                 {isWaitingReply ? <><span style={{ width: 12, height: 12, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Waiting</> : <><Icons.chat size={14} /> Send</>}
               </button>
             </div>
+            )}
             {errorMessage && <div style={{ marginTop: 10, fontSize: 12, color: "#FCA5A5" }}>{errorMessage}</div>}
           </div>
 
           <div style={{ padding: "18px 22px 22px", display: "flex", justifyContent: "center" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", borderRadius: 18, backdropFilter: "blur(20px)", boxShadow: "0 14px 40px -10px rgba(0,0,0,0.7)" }}>
-              <CtrlBtn icon={store.isMuted ? <Icons.micOff size={18} /> : <Icons.mic size={18} />} label={store.isMuted ? "Unmute" : "Mute"} onClick={store.toggleMute} tone={store.isMuted ? "amber" : undefined} />
+              <CtrlBtn
+                icon={store.isMuted ? <Icons.micOff size={18} /> : <Icons.mic size={18} />}
+                label={store.isMuted ? "Unmute" : useElevenLabs && voiceAgentStatus === "connected" && agentIsListening ? "Mic live" : "Mute"}
+                onClick={handleToggleMute}
+                tone={store.isMuted ? "amber" : useElevenLabs && voiceAgentStatus === "connected" && agentIsListening && !store.isMuted ? "teal" : undefined}
+              />
               {isVideoMode && <CtrlBtn icon={store.isCameraOff ? <Icons.camOff size={18} /> : <Icons.cam size={18} />} label={store.isCameraOff ? "Camera off" : "Camera"} onClick={store.toggleCamera} />}
               <CtrlBtn icon={<Icons.hint size={18} />} label="Hint" tone="violet" onClick={handleUseSuggestedResponse} disabled={!liveCoaching?.suggested_response} />
               <button className="rc-btn danger" style={{ padding: "10px 16px", borderRadius: 14, marginLeft: 6 }} onClick={handleEndCall}>
@@ -760,7 +971,7 @@ function CallPageContent() {
 
         <div style={{ background: "rgba(10,14,26,0.7)", borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", backdropFilter: "blur(20px)" }}>
           <div style={{ padding: "14px 16px 0", borderBottom: "1px solid var(--line)" }}>
-<div className="rc-label" style={{ marginBottom: 12 }}>Coaching</div>
+            <div className="rc-label" style={{ marginBottom: 12 }}>Coaching</div>
             <div style={{ display: "flex", gap: 2 }}>
               {TABS.map((tab, index) => (
                 <div key={tab} onClick={() => setActiveTab(index)} style={{ padding: "8px 11px", fontSize: 12, fontWeight: index === activeTab ? 600 : 500, color: index === activeTab ? "var(--ink-0)" : "var(--ink-2)", borderBottom: index === activeTab ? "2px solid #8B7DFB" : "2px solid transparent", marginBottom: -1, cursor: "pointer" }}>{tab}</div>
@@ -793,7 +1004,7 @@ function CallPageContent() {
                     {line}
                   </div>
                 ))}
-                {liveCoaching?.suggested_response && (
+                {liveCoaching?.suggested_response && !store.criticalMomentVisible && (
                   <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 13, lineHeight: 1.5, fontStyle: "italic", marginTop: 8 }}>
                     {liveCoaching.suggested_response}
                   </div>
@@ -811,6 +1022,20 @@ function CallPageContent() {
                   </div>
                 ))}
               </div>
+            )}
+            {activeTab === 2 && (
+              store.consentVideoSignals || store.consentAudioSignals ? (
+                <LiveSignalsPanel
+                  video={store.liveSignals}
+                  audio={store.liveAudioSignals}
+                  showVideo={isVideoMode && store.consentVideoSignals}
+                  showAudio={store.consentAudioSignals}
+                />
+              ) : (
+                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                  Signal analysis is off for this session. Enable video or audio signals on the setup screen.
+                </div>
+              )
             )}
           </div>
         </div>

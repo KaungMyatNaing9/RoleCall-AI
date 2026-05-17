@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/AppShell";
 import { TopNav } from "@/components/layout/TopNav";
 import { Icons } from "@/components/icons";
+import { BackendStatus } from "@/components/layout/BackendStatus";
 
 const QUICK_START = [
   { n: "Healthcare", href: "/create" },
@@ -22,6 +23,8 @@ export default function DashboardPage() {
             <button className="rc-btn primary"><Icons.sparkle size={14} /> New simulation</button>
           </Link>
         </div>
+
+        <BackendStatus />
 
         <p style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 24, lineHeight: 1.5 }}>
           Start with a template or describe your own persona on the next screen.

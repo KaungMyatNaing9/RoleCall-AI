@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { supportsBrowserDictation } from "@/lib/browserCapabilities";
+import { cameraStreamRef, isMediaStreamLive } from "@/lib/cameraStream";
 
 declare global {
   interface Window {
@@ -58,8 +60,7 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setIsSupported(Boolean(Recognition));
+    setIsSupported(supportsBrowserDictation());
   }, []);
 
   const stopTracks = useCallback(() => {
@@ -75,9 +76,14 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
   }, [stopTracks]);
 
   const startListening = useCallback(async () => {
+    if (!supportsBrowserDictation()) {
+      setErrorMessage("Voice dictation is not available here. Type your message instead.");
+      return;
+    }
+
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
-      setErrorMessage("Speech recognition is not supported in this browser.");
+      setErrorMessage("Voice dictation is not available here. Type your message instead.");
       return;
     }
 
@@ -86,7 +92,14 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
       manualStopRef.current = false;
       finalTranscriptRef.current = "";
       setInterimTranscript("");
-      streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const shared = cameraStreamRef.get();
+      const hasSharedMic =
+        isMediaStreamLive(shared) && Boolean(shared?.getAudioTracks().length);
+
+      if (!hasSharedMic) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
 
       const recognition = new Recognition();
       recognition.continuous = false;
@@ -139,10 +152,13 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
     }
   }, [onFinalTranscript, stopTracks]);
 
-  useEffect(() => () => {
-    recognitionRef.current?.stop();
-    stopTracks();
-  }, [stopTracks]);
+  useEffect(
+    () => () => {
+      recognitionRef.current?.stop();
+      stopTracks();
+    },
+    [stopTracks],
+  );
 
   const clearTranscript = useCallback(() => setInterimTranscript(""), []);
 

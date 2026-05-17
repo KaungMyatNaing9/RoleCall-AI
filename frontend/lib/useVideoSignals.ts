@@ -6,11 +6,14 @@ import { useSimulationStore } from "@/stores/simulationStore";
 export function useVideoSignals(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   sessionId: string,
+  enabled = true,
 ) {
   const store = useSimulationStore();
   const frameIndex = useRef(0);
 
   useEffect(() => {
+    if (!enabled) return;
+
     const id = setInterval(async () => {
       const video = videoRef.current;
       if (!video || video.readyState < 2) return;
@@ -37,5 +40,5 @@ export function useVideoSignals(
     }, 3000);
 
     return () => clearInterval(id);
-  }, [videoRef, sessionId, store]);
+  }, [videoRef, sessionId, store, enabled]);
 }

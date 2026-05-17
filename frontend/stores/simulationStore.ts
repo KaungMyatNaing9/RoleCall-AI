@@ -44,6 +44,8 @@ interface SimulationState {
 
   // Report
   report: EvaluationReport | null;
+  sessionVideoSignals: VideoSignals | null;
+  sessionAudioSignals: AudioSignals | null;
 
   // Actions
   setMode: (mode: string) => void;
@@ -72,6 +74,7 @@ interface SimulationState {
   toggleMute: () => void;
   toggleCamera: () => void;
   setReport: (report: EvaluationReport) => void;
+  setSessionSignals: (video: VideoSignals | null, audio: AudioSignals | null) => void;
   reset: () => void;
 }
 
@@ -134,6 +137,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   callState: "idle",
 
   report: null,
+  sessionVideoSignals: null,
+  sessionAudioSignals: null,
 
   setMode: (mode) => set({ mode }),
   setIndustry: (industry) => set({ industry }),
@@ -171,11 +176,14 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
   toggleCamera: () => set((s) => ({ isCameraOff: !s.isCameraOff })),
   setReport: (report) => set({ report }),
+  setSessionSignals: (sessionVideoSignals, sessionAudioSignals) =>
+    set({ sessionVideoSignals, sessionAudioSignals }),
   reset: () => set({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
-    criticalMomentVisible: false, criticalMomentMessage: "", report: null, signalHistory: [],
+    criticalMomentVisible: false, criticalMomentMessage: "", report: null,
+    sessionVideoSignals: null, sessionAudioSignals: null, signalHistory: [],
     liveSignals: DEFAULT_SIGNALS, liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
     liveCoaching: null,
   }),
