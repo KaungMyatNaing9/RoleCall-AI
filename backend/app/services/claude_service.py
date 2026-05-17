@@ -161,7 +161,14 @@ async def generate_rubric(scenario_id: str, industry: str, evaluation_focus: lis
     if data is None:
         raise ValueError("Claude returned unparseable rubric JSON after 2 attempts")
 
-    items = [RubricItem(**item) for item in data["items"]]
+    raw_items = data.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise ValueError("Claude rubric JSON missing a non-empty 'items' list")
+
+    try:
+        items = [RubricItem(**item) for item in raw_items]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid rubric item shape: {exc}") from exc
     total = sum(i.weight for i in items)
     return RubricResponse(id=f"rubric-{uuid.uuid4().hex[:8]}", items=items, total_weight=total)
 

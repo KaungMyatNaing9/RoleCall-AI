@@ -46,6 +46,8 @@ interface SimulationState {
   report: EvaluationReport | null;
   sessionVideoSignals: VideoSignals | null;
   sessionAudioSignals: AudioSignals | null;
+  sessionDurationS: number | null;
+  sessionSignalsFinalized: boolean;
 
   // Actions
   setMode: (mode: string) => void;
@@ -75,6 +77,8 @@ interface SimulationState {
   toggleCamera: () => void;
   setReport: (report: EvaluationReport) => void;
   setSessionSignals: (video: VideoSignals | null, audio: AudioSignals | null) => void;
+  setSessionDurationS: (durationS: number) => void;
+  markSessionSignalsFinalized: () => void;
   reset: () => void;
 }
 
@@ -139,6 +143,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   report: null,
   sessionVideoSignals: null,
   sessionAudioSignals: null,
+  sessionDurationS: null,
+  sessionSignalsFinalized: false,
 
   setMode: (mode) => set({ mode }),
   setIndustry: (industry) => set({ industry }),
@@ -164,6 +170,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     liveCoaching: null,
     criticalMomentVisible: false,
     criticalMomentMessage: "",
+    sessionDurationS: null,
+    sessionSignalsFinalized: false,
   }),
   endCall: () => set({ callState: "ended" }),
   addTranscriptEntry: (entry) => set((s) => ({ transcript: [...s.transcript, entry] })),
@@ -178,12 +186,15 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setReport: (report) => set({ report }),
   setSessionSignals: (sessionVideoSignals, sessionAudioSignals) =>
     set({ sessionVideoSignals, sessionAudioSignals }),
+  setSessionDurationS: (sessionDurationS) => set({ sessionDurationS }),
+  markSessionSignalsFinalized: () => set({ sessionSignalsFinalized: true }),
   reset: () => set({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
     isGenerating: false, agentLog: [], callState: "idle", transcript: [],
     criticalMomentVisible: false, criticalMomentMessage: "", report: null,
-    sessionVideoSignals: null, sessionAudioSignals: null, signalHistory: [],
+    sessionVideoSignals: null, sessionAudioSignals: null,
+    sessionDurationS: null, sessionSignalsFinalized: false, signalHistory: [],
     liveSignals: DEFAULT_SIGNALS, liveAudioSignals: DEFAULT_AUDIO_SIGNALS,
     liveCoaching: null,
   }),

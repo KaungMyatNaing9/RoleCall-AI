@@ -15,6 +15,7 @@ import { cameraStreamRef, setVideoTrackEnabled } from "@/lib/cameraStream";
 import { useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
 import {
   api,
+  type LiveCoaching,
   type SimulationTurn,
   type TranscriptEntry,
 } from "@/lib/apiClient";
@@ -354,6 +355,37 @@ function CallPageContent() {
 
   const liveCoaching = store.liveCoaching;
 
+  const visibleTranscriptRef = useRef(visibleTranscript);
+  useEffect(() => {
+    visibleTranscriptRef.current = visibleTranscript;
+  }, [visibleTranscript]);
+
+  const lastCriticalKeyRef = useRef<string | null>(null);
+
+  const applyCriticalMoment = useCallback(
+    (text: string, coaching?: LiveCoaching | null) => {
+      const excerpt = criticalExcerpt(text);
+      const dedupeKey = excerpt.slice(0, 100);
+      if (lastCriticalKeyRef.current === dedupeKey) {
+        if (coaching?.suggested_response) {
+          store.setLiveCoaching(coaching);
+        }
+        return;
+      }
+      lastCriticalKeyRef.current = dedupeKey;
+      store.triggerCriticalMoment(excerpt);
+      if (coaching?.suggested_response) {
+        store.setLiveCoaching(coaching);
+      } else if (!useSimulationStore.getState().liveCoaching?.suggested_response) {
+        useSimulationStore.getState().setLiveCoaching(buildCriticalCoaching(persona, excerpt));
+      }
+    },
+    [persona, store],
+  );
+
+  const applyCriticalMomentRef = useRef(applyCriticalMoment);
+  applyCriticalMomentRef.current = applyCriticalMoment;
+
   const {
     startSession,
     endSession,
@@ -381,11 +413,7 @@ function CallPageContent() {
       store.addTranscriptEntry(entry);
 
       if (entry.is_critical) {
-        const excerpt = criticalExcerpt(message);
-        store.triggerCriticalMoment(excerpt);
-        if (!useSimulationStore.getState().liveCoaching?.suggested_response) {
-          useSimulationStore.getState().setLiveCoaching(buildCriticalCoaching(persona, excerpt));
-        }
+        applyCriticalMomentRef.current(message);
       }
     },
 
@@ -442,13 +470,10 @@ function CallPageContent() {
       store.setLiveCoaching(response.coaching);
 
       if (response.entry.is_critical) {
-        store.triggerCriticalMoment(criticalExcerpt(response.entry.text));
-        if (response.coaching.suggested_response) {
-          store.setLiveCoaching(response.coaching);
-        }
+        applyCriticalMoment(response.entry.text, response.coaching);
       }
     },
-    [store]
+    [applyCriticalMoment, store],
   );
 
   const appendTranscript = useCallback(
@@ -528,13 +553,24 @@ function CallPageContent() {
   const goToAnalyzing = useCallback(async () => {
     stopListeningRef.current();
     if (useElevenLabs && voiceAgentStatus === "connected") {
-      endSession();
+      await Promise.resolve(endSession());
     }
     cameraStreamRef.stop();
     store.endCall();
 
+    const transcriptSnapshot = visibleTranscriptRef.current;
+    const storeTranscript = useSimulationStore.getState().transcript;
+    const transcript =
+      transcriptSnapshot.length >= storeTranscript.length
+        ? transcriptSnapshot
+        : storeTranscript;
+    if (transcript.length > storeTranscript.length) {
+      useSimulationStore.setState({ transcript });
+    }
+
     const durationS = Math.max(1, Math.floor((Date.now() - startTimeRef.current) / 1000));
-    const transcript = useSimulationStore.getState().transcript;
+    store.setSessionDurationS(durationS);
+
     try {
       const signals = await finalizeSessionSignals({
         sessionId: sessionIdRef.current,
@@ -544,8 +580,9 @@ function CallPageContent() {
         consentAudio: store.consentAudioSignals,
       });
       store.setSessionSignals(signals.video, signals.audio);
+      store.markSessionSignalsFinalized();
     } catch {
-      // Non-fatal — report can still generate from transcript.
+      // Non-fatal — analyzing may retry with the same duration.
     }
 
     router.push("/analyzing");

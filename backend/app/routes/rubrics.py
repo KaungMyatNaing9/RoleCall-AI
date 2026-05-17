@@ -11,7 +11,7 @@ async def generate_rubric(req: RubricGenerateRequest):
     if claude_service.is_available():
         try:
             rubric = await claude_service.generate_rubric(req.scenario_id, req.industry, req.evaluation_focus)
-        except ValueError as exc:
+        except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         persona_service.RUBRIC_STORE[rubric.id] = rubric
         return rubric

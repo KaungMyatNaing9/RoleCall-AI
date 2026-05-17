@@ -37,9 +37,15 @@ export default function AnalyzingPage() {
         }
       }
 
-      if (!s.sessionVideoSignals && !s.sessionAudioSignals) {
+      const needsSignalFinalize =
+        !s.sessionSignalsFinalized &&
+        !s.sessionVideoSignals &&
+        !s.sessionAudioSignals;
+
+      if (needsSignalFinalize) {
         try {
-          const durationS = Math.max(60, transcript.length * 45);
+          const durationS =
+            s.sessionDurationS ?? Math.max(60, transcript.length * 45);
           const signals = await finalizeSessionSignals({
             sessionId,
             durationS,
@@ -48,6 +54,7 @@ export default function AnalyzingPage() {
             consentAudio: s.consentAudioSignals,
           });
           storeRef.current.setSessionSignals(signals.video, signals.audio);
+          storeRef.current.markSessionSignalsFinalized();
         } catch {
           // Non-fatal if summarize endpoints fail.
         }
