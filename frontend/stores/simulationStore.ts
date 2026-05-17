@@ -27,6 +27,7 @@ interface SimulationState {
   consentAudioSignals: boolean;
   consentSaveRecording: boolean;
   consentSaveTranscript: boolean;
+  mediaPrecallReady: boolean;
 
   // Live call
   callStartTime: number | null;
@@ -64,6 +65,7 @@ interface SimulationState {
   setIsGenerating: (v: boolean) => void;
   setAgentLog: (log: Array<{ agent: string; color: string; message: string }>) => void;
   setConsent: (key: keyof Pick<SimulationState, "consentVideoSignals" | "consentAudioSignals" | "consentSaveRecording" | "consentSaveTranscript">, value: boolean) => void;
+  setMediaPrecallReady: (ready: boolean) => void;
   startCall: () => void;
   endCall: () => void;
   addTranscriptEntry: (entry: SimulationState["transcript"][0]) => void;
@@ -130,6 +132,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   consentAudioSignals: true,
   consentSaveRecording: false,
   consentSaveTranscript: true,
+  mediaPrecallReady: false,
 
   callStartTime: null,
   callElapsed: 0,
@@ -164,6 +167,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setIsGenerating: (isGenerating) => set({ isGenerating }),
   setAgentLog: (agentLog) => set({ agentLog }),
   setConsent: (key, value) => set({ [key]: value } as Partial<SimulationState>),
+  setMediaPrecallReady: (mediaPrecallReady) => set({ mediaPrecallReady }),
   startCall: () => set({
     callStartTime: Date.now(),
     callElapsed: 0,
@@ -181,7 +185,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   addTranscriptEntry: (entry) => set((s) => ({ transcript: [...s.transcript, entry] })),
   setLiveSignals: (liveSignals) => set({ liveSignals }),
   pushSignalSnapshot: (s) => set((st) => ({ signalHistory: [...st.signalHistory, s] })),
-  setLiveAudioSignals: (liveAudioSignals) => set({ liveAudioSignals }),
+  setLiveAudioSignals: (signals) => set({ liveAudioSignals: signals ?? DEFAULT_AUDIO_SIGNALS }),
   setLiveCoaching: (liveCoaching) => set({ liveCoaching }),
   triggerCriticalMoment: (message) => set({ criticalMomentVisible: true, criticalMomentMessage: message }),
   dismissCriticalMoment: () => set({ criticalMomentVisible: false }),
@@ -195,7 +199,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   reset: () => set({
     mode: null, industry: null, personaPrompt: "", currentStep: 1,
     persona: null, scenario: null, rubric: null, simulationId: null, agentId: null,
-    isGenerating: false, agentLog: [], callState: "idle", transcript: [],
+    isGenerating: false, agentLog: [], mediaPrecallReady: false, callState: "idle", transcript: [],
     signalHistory: [],
     liveSignals: DEFAULT_SIGNALS,
     liveAudioSignals: DEFAULT_AUDIO_SIGNALS,

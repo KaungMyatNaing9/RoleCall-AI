@@ -15,4 +15,7 @@ async def generate_evaluation(req: EvaluationGenerateRequest):
         scenario_id=req.scenario_id,
         rubric_id=req.rubric_id,
         mode=req.mode,
+        persona_name_fallback=req.persona_name,
+        industry_fallback=req.industry,
+        difficulty_fallback=req.difficulty,
     )

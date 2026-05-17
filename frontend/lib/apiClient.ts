@@ -29,7 +29,8 @@ async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
 }
 
 export const api = {
-  health: () => request<{ status: string; version: string }>("/health"),
+  health: () =>
+    request<{ status: string; version: string; features?: string[] }>("/health"),
 
   generatePersona: (body: object) =>
     request<PersonaResponse>("/personas/generate", { method: "POST", body: JSON.stringify(body) }),

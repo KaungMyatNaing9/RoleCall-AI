@@ -1,4 +1,5 @@
 import random
+import uuid
 from app.models.persona import PersonaResponse
 from app.models.scenario import ScenarioResponse
 from app.models.rubric import RubricResponse, RubricItem
@@ -76,22 +77,25 @@ def _persona_from_prompt(prompt: str, industry: str) -> PersonaResponse:
 
     lower = prompt.lower()
 
+    def _has_word(word: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(word)}\b", lower))
+
     # --- role ---
     role_map = [
         (["teacher", "instructor", "professor", "educator"], "Teacher"),
         (["student", "pupil", "learner"], "Student"),
         (["parent", "guardian", "mother", "father", "mom", "dad"], "Parent"),
-        (["patient", "discharge", "medical", "hospital"], "Patient"),
         (["customer", "buyer", "shopper", "consumer"], "Customer"),
         (["client", "account holder"], "Client"),
         (["manager", "supervisor", "boss"], "Manager"),
         (["recruiter", "hr", "interviewer", "hiring"], "Recruiter"),
         (["employee", "worker", "staff"], "Employee"),
+        (["patient", "discharge", "hospital"], "Patient"),
         (["caller"], "Caller"),
     ]
     role = f"{industry} participant"
     for keywords, label in role_map:
-        if any(kw in lower for kw in keywords):
+        if any(_has_word(kw) if " " not in kw else kw in lower for kw in keywords):
             role = label
             break
 
@@ -190,13 +194,28 @@ def _persona_from_prompt(prompt: str, industry: str) -> PersonaResponse:
 
 
 def get_persona(prompt: str, industry: str) -> PersonaResponse:
-    if prompt.strip():
-        return _persona_from_prompt(prompt, industry)
-    return MARGARET_PERSONA
+    cleaned = prompt.strip()
+    if cleaned:
+        return _persona_from_prompt(cleaned, industry)
+    return MARGARET_PERSONA.model_copy(
+        update={"id": f"persona-mock-{uuid.uuid4().hex[:8]}"}
+    )
 
 
 def get_scenario(persona_id: str, industry: str) -> ScenarioResponse:
-    return MOCK_SCENARIO
+    # Return an empty-field scenario so _coerce_scenario fills in industry-appropriate defaults.
+    # Returning MOCK_SCENARIO here would bake in the healthcare title/description for all industries.
+    return ScenarioResponse(
+        id=f"scenario-mock-{uuid.uuid4().hex[:8]}",
+        title="",
+        description="",
+        your_role="",
+        duration="~5 min",
+        objective="",
+        success_condition="",
+        difficulty="Medium",
+        industry=industry,
+    )
 
 
 def get_rubric(scenario_id: str, industry: str, focus: list[str]) -> RubricResponse:

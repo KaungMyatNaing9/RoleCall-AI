@@ -37,6 +37,17 @@ const GENERATION_LABELS: Record<string, string> = {
   done: "Done",
 };
 
+const INDUSTRY_DEFAULT_PROMPTS: Record<string, string> = {
+  "Healthcare": "An elderly post-discharge patient who is confused about medication and later mentions chest tightness.",
+  "HR Interview": "A nervous job candidate interviewing for a software engineer role, eager to impress but unsure about a gap in their resume.",
+  "Customer Service": "An angry customer demanding a refund for a defective product they bought last week.",
+  "Sales": "A skeptical procurement manager evaluating whether your software is worth switching from their current provider.",
+  "Education": "A worried parent concerned about their child's declining grades and asking for a meeting with the teacher.",
+  "Finance": "An older adult who suspects their bank account has been compromised and is panicking about recent transactions.",
+  "Hospitality": "A frustrated guest whose hotel room doesn't match their reservation and demands an immediate fix.",
+  "Custom": "",
+};
+
 export default function CreatePage() {
   const router = useRouter();
   const store = useSimulationStore();
@@ -64,6 +75,16 @@ export default function CreatePage() {
     );
   };
 
+  const handleIndustrySelect = (industry: string) => {
+    // Only replace the prompt if it still matches the previous industry's default
+    // (i.e., the user hasn't customized it themselves).
+    const prevDefault = INDUSTRY_DEFAULT_PROMPTS[selectedIndustry] ?? "";
+    if (prompt === prevDefault || prompt.trim() === "") {
+      setPrompt(INDUSTRY_DEFAULT_PROMPTS[industry] ?? "");
+    }
+    setSelectedIndustry(industry);
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerateError("");
@@ -82,6 +103,15 @@ export default function CreatePage() {
         behavior_toggles: toggles,
       });
       store.setPersona(persona);
+      if (
+        persona.id === "persona-margaret-001" &&
+        prompt.trim() &&
+        !/margaret|discharge|elderly|post-discharge|medication/i.test(prompt)
+      ) {
+        throw new Error(
+          "The API on port 8000 is an outdated build and ignored your persona prompt. Stop that process and restart the backend with scripts/run_backend.ps1.",
+        );
+      }
       store.setAgentLog([
         { agent: "Persona Generator", color: "#5EEAD4", message: `Generated ${persona.name}, ${persona.age}, ${persona.role}. Mood: ${persona.mood}.` },
       ]);
@@ -166,7 +196,7 @@ export default function CreatePage() {
               <button
                 key={id}
                 type="button"
-                onClick={() => setSelectedIndustry(id)}
+                onClick={() => handleIndustrySelect(id)}
                 className="rc-btn sm"
                 style={{
                   background:

@@ -74,6 +74,9 @@ export default function AnalyzingPage() {
         rubric_id: s.rubric.id,
         mode: s.mode ?? "video",
         transcript,
+        persona_name: s.persona.name,
+        industry: s.scenario.industry,
+        difficulty: s.scenario.difficulty,
       });
     }
 

@@ -9,7 +9,8 @@ import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 
-import { attachStreamToVideo, cameraStreamRef, ensureLocalMedia } from "@/lib/cameraStream";
+import { speakWithBrowserTts, stopBrowserTts } from "@/lib/browserTts";
+import { attachStreamToVideo, cameraStreamRef, ensureLocalMedia, isMediaStreamLive } from "@/lib/cameraStream";
 import {
   api,
   type SimulationTurn,
@@ -238,6 +239,9 @@ function LiveSignalsPanel({
 function CallPageInner() {
   const router = useRouter();
   const store = useSimulationStore();
+  const mediaPrecallReady = useSimulationStore((s) => s.mediaPrecallReady);
+  const setSimulationId = useSimulationStore((s) => s.setSimulationId);
+  const startCall = useSimulationStore((s) => s.startCall);
 
   if (!store.persona || !store.scenario || !store.rubric) {
     return (
@@ -275,7 +279,9 @@ function CallPageInner() {
   const [isWaitingReply, setIsWaitingReply] = useState(false);
   const [draftReply, setDraftReply] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const [hasVideoStream, setHasVideoStream] = useState(false);
+  const autoMicStartedRef = useRef(false);
 
   const persona = store.persona;
 
@@ -284,6 +290,8 @@ function CallPageInner() {
   const isVoiceMode = mode === "voice";
   const isPhoneMode = mode === "phone";
   const isTextMode = mode === "text";
+  const needsMediaGate = isVideoMode || isVoiceMode || isPhoneMode;
+  const awaitingMediaCheck = needsMediaGate && !mediaPrecallReady;
 
   useVideoSignals(videoRef, sessionIdRef.current);
 
@@ -322,7 +330,7 @@ function CallPageInner() {
       }
       store.setLiveCoaching(response.coaching);
       if (response.entry.is_critical) {
-        store.triggerCriticalMoment(response.coaching.next_best_action);
+        store.triggerCriticalMoment(response.coaching?.next_best_action ?? "Acknowledge the concern and escalate if needed.");
       }
     },
     [store]
@@ -335,15 +343,19 @@ function CallPageInner() {
 
   const playPersonaVoice = useCallback(async (text: string) => {
     if (isTextMode || store.isMuted) return;
+    setVoiceError("");
+    stopBrowserTts();
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+
     try {
       setIsPlayingVoice(true);
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-        audioUrlRef.current = null;
-      }
+      setPersonaTalking(true);
 
       const blob = await api.synthesizeVoice({
         text,
@@ -351,6 +363,10 @@ function CallPageInner() {
         persona_name: persona.name,
         voice_style: persona.voice_style,
       });
+
+      if (blob.size < 256) {
+        throw new Error("Server TTS unavailable");
+      }
 
       const url = URL.createObjectURL(blob);
       audioUrlRef.current = url;
@@ -366,14 +382,24 @@ function CallPageInner() {
         setPersonaTalking(false);
       };
 
-      setPersonaTalking(true);
       await audio.play();
-    } catch (error) {
-      setIsPlayingVoice(false);
-      setPersonaTalking(false);
-      setErrorMessage(
-        error instanceof Error ? error.message : "Voice playback failed."
+    } catch {
+      const spoke = speakWithBrowserTts(
+        text,
+        () => {
+          setIsPlayingVoice(true);
+          setPersonaTalking(true);
+        },
+        () => {
+          setIsPlayingVoice(false);
+          setPersonaTalking(false);
+        },
       );
+      if (!spoke) {
+        setIsPlayingVoice(false);
+        setPersonaTalking(false);
+        setVoiceError("Voice playback unavailable. Read the transcript on screen.");
+      }
     }
   }, [isTextMode, persona.id, persona.name, persona.voice_style, store.isMuted]);
 
@@ -388,6 +414,8 @@ function CallPageInner() {
         persona_id: store.persona?.id,
         scenario_id: store.scenario?.id,
         mode,
+        persona: store.persona,
+        scenario: store.scenario,
       });
 
       const entry: TranscriptEntry = {
@@ -466,7 +494,11 @@ function CallPageInner() {
       }
 
       try {
-        const stream = await ensureLocalMedia({ video: true, audio: true });
+        const existing = cameraStreamRef.get();
+        const stream =
+          existing && isMediaStreamLive(existing)
+            ? existing
+            : await ensureLocalMedia({ video: true, audio: true });
         if (cancelled || !videoRef.current) return;
         await attachStreamToVideo(videoRef.current, stream);
         if (cancelled) return;
@@ -491,7 +523,7 @@ function CallPageInner() {
   }, []);
 
   useEffect(() => {
-    return () => {
+    const stopAll = () => {
       stopListening();
       cameraStreamRef.stop();
       if (videoRef.current) {
@@ -503,19 +535,44 @@ function CallPageInner() {
       if (audioUrlRef.current) {
         URL.revokeObjectURL(audioUrlRef.current);
       }
+      stopBrowserTts();
+    };
+
+    window.addEventListener("beforeunload", stopAll);
+    return () => {
+      window.removeEventListener("beforeunload", stopAll);
+      stopAll();
     };
   }, [stopListening]);
 
   useEffect(() => {
     if (sessionStartedRef.current) return;
+    if (needsMediaGate && !mediaPrecallReady) return;
 
     sessionStartedRef.current = true;
     startTimeRef.current = Date.now();
-    store.setSimulationId(sessionIdRef.current);
-    store.startCall();
+    setSimulationId(sessionIdRef.current);
+    startCall();
 
     void requestPersonaReply("", 0);
-  }, [requestPersonaReply, store]);
+  }, [needsMediaGate, mediaPrecallReady, requestPersonaReply, setSimulationId, startCall]);
+
+  useEffect(() => {
+    if (isTextMode || autoMicStartedRef.current || !speechSupported || store.isMuted) return;
+    if (!sessionStartedRef.current || isWaitingReply || isPlayingVoice) return;
+    if (visibleTranscript.length === 0) return;
+
+    autoMicStartedRef.current = true;
+    void startListening();
+  }, [
+    isPlayingVoice,
+    isTextMode,
+    isWaitingReply,
+    speechSupported,
+    startListening,
+    store.isMuted,
+    visibleTranscript.length,
+  ]);
 
   const handleSend = useCallback(async () => {
     await submitUserTurn(draftReply);
@@ -548,6 +605,20 @@ function CallPageInner() {
     : ["Ask one clear question at a time so the persona can answer without getting lost."];
 
   const primaryModeLabel = isPhoneMode ? "PHONE" : isTextMode ? "CHAT" : isVoiceMode ? "VOICE" : "VIDEO";
+
+  if (awaitingMediaCheck) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "grid", placeItems: "center", padding: 28 }}>
+        <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+          <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>Finish device check first</h1>
+          <p style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+            Open the setup screen and allow camera or microphone access before joining the live session.
+          </p>
+          <Link href="/simulation/setup"><button className="rc-btn primary">Go to device check</button></Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "flex", flexDirection: "column", zIndex: 100 }}>
@@ -694,6 +765,7 @@ function CallPageInner() {
               </button>
             </div>
             {errorMessage && <div style={{ marginTop: 10, fontSize: 12, color: "#FCA5A5" }}>{errorMessage}</div>}
+            {voiceError && <div style={{ marginTop: 6, fontSize: 12, color: "#FCD34D" }}>{voiceError}</div>}
           </div>
 
           <div style={{ padding: "18px 22px 22px", display: "flex", justifyContent: "center" }}>

@@ -16,6 +16,10 @@ class EvaluationGenerateRequest(BaseModel):
     rubric_id: str
     transcript: list[TranscriptSyncEntry] = Field(default_factory=list)
     mode: str = "video"
+    # Client-side fallbacks so the report uses the right metadata even after a backend restart.
+    persona_name: str | None = None
+    industry: str | None = None
+    difficulty: str | None = None
 
 
 class KeyMoment(BaseModel):

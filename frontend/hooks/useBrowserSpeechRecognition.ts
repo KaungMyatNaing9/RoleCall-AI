@@ -102,7 +102,7 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
       }
 
       const recognition = new Recognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
@@ -138,9 +138,11 @@ export function useBrowserSpeechRecognition({ onFinalTranscript }: SpeechRecogni
         stopTracks();
         const text = finalTranscriptRef.current.trim();
         setInterimTranscript(text);
-        if (!manualStopRef.current && text) {
+        if (text) {
           onFinalTranscript(text);
+          finalTranscriptRef.current = "";
         }
+        manualStopRef.current = false;
       };
 
       recognitionRef.current = recognition;

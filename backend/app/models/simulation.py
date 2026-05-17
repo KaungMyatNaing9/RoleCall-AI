@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 from app.models.persona import PersonaResponse
 from app.models.scenario import ScenarioResponse
 from app.models.rubric import RubricResponse
@@ -13,6 +13,9 @@ class SimulationRespondRequest(BaseModel):
     persona_id: str | None = None
     scenario_id: str | None = None
     mode: str | None = None
+    # Inline fallbacks so the backend can recover when its in-memory store is cleared (e.g. hot-reload).
+    persona: Optional[PersonaResponse] = None
+    scenario: Optional[dict[str, Any]] = None
 
 
 class TranscriptEntry(BaseModel):

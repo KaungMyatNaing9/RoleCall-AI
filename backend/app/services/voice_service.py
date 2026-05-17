@@ -157,6 +157,31 @@ def _synthesize_speech_sync(
     )
 
 
+def _silent_wav_bytes(duration_s: float = 0.05, sample_rate: int = 22050) -> bytes:
+    """Minimal valid WAV so the client can finish playback when TTS is unavailable."""
+    import struct
+
+    num_samples = max(1, int(sample_rate * duration_s))
+    data_size = num_samples * 2
+    header = struct.pack(
+        "<4sI4s4sIHHIIHH4sI",
+        b"RIFF",
+        36 + data_size,
+        b"WAVE",
+        b"fmt ",
+        16,
+        1,
+        1,
+        sample_rate,
+        sample_rate * 2,
+        2,
+        16,
+        b"data",
+        data_size,
+    )
+    return header + (b"\x00\x00" * num_samples)
+
+
 async def synthesize_speech(
     text: str,
     voice_style: str | None = None,
@@ -165,7 +190,7 @@ async def synthesize_speech(
     persona_name: str | None = None,
 ) -> bytes:
     if not settings.elevenlabs_api_key:
-        raise HTTPException(status_code=503, detail="ELEVENLABS_API_KEY is not configured.")
+        return _silent_wav_bytes()
 
     try:
         return await asyncio.to_thread(_synthesize_speech_sync, text, voice_id, persona_id, persona_name)

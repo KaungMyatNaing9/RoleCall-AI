@@ -483,6 +483,8 @@ async def respond(
     persona_id: str | None = None,
     scenario_id: str | None = None,
     mode: str | None = None,
+    inline_persona: Any | None = None,
+    inline_scenario: dict[str, Any] | None = None,
 ) -> SimulationTurn:
     session = _get_session(session_id)
     if not persona_id:
@@ -491,10 +493,17 @@ async def respond(
         raise HTTPException(status_code=400, detail="scenario_id is required for simulation responses.")
 
     persona = persona_service.get_persona(persona_id)
+    if not persona and inline_persona is not None:
+        persona_service.PERSONA_STORE[inline_persona.id] = inline_persona
+        persona = inline_persona
     if not persona:
         raise HTTPException(status_code=404, detail=f"Persona not found: {persona_id}")
 
     scenario = persona_service.SCENARIO_STORE.get(scenario_id)
+    if not scenario and inline_scenario is not None:
+        store_key = inline_scenario.get("id", scenario_id)
+        persona_service.SCENARIO_STORE[store_key] = inline_scenario
+        scenario = inline_scenario
     if not scenario:
         raise HTTPException(status_code=404, detail=f"Scenario not found: {scenario_id}")
 
