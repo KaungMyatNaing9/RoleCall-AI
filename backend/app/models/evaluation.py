@@ -11,9 +11,9 @@ class TranscriptSyncEntry(BaseModel):
 
 class EvaluationGenerateRequest(BaseModel):
     session_id: str
-    persona_id: str = "persona-margaret-001"
-    scenario_id: str = "scenario-postdischarge-001"
-    rubric_id: str = "rubric-healthcare-001"
+    persona_id: str
+    scenario_id: str
+    rubric_id: str
     transcript: list[TranscriptSyncEntry] = Field(default_factory=list)
     mode: str = "video"
 

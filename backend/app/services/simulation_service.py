@@ -3,6 +3,8 @@ import json
 from typing import Any
 from urllib import request
 
+from fastapi import HTTPException
+
 from app.config import settings
 from app.models.signals import AudioSignals, VideoSignals, PRIVACY_NOTICE
 from app.models.simulation import LiveCoaching, SimulationTurn, TranscriptEntry
@@ -10,7 +12,7 @@ from app.prompts.simulation_prompt import (
     SIMULATION_AGENT_SYSTEM_PROMPT,
     build_simulation_agent_prompt,
 )
-from app.services import audio_signal_service, mock_service, persona_service, video_signal_service
+from app.services import audio_signal_service, persona_service, video_signal_service
 
 
 SESSION_STORE: dict[str, dict[str, Any]] = {}
@@ -483,10 +485,19 @@ async def respond(
     mode: str | None = None,
 ) -> SimulationTurn:
     session = _get_session(session_id)
-    persona = persona_service.get_persona(persona_id) if persona_id else None
+    if not persona_id:
+        raise HTTPException(status_code=400, detail="persona_id is required for simulation responses.")
+    if not scenario_id:
+        raise HTTPException(status_code=400, detail="scenario_id is required for simulation responses.")
+
+    persona = persona_service.get_persona(persona_id)
     if not persona:
-        persona = mock_service.get_persona("", "Healthcare")
-    scenario = persona_service.SCENARIO_STORE.get(scenario_id) if scenario_id else None
+        raise HTTPException(status_code=404, detail=f"Persona not found: {persona_id}")
+
+    scenario = persona_service.SCENARIO_STORE.get(scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail=f"Scenario not found: {scenario_id}")
+
     chosen_mode = mode or "video"
 
     if user_message.strip():

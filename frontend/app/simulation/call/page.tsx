@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { Waveform } from "@/components/ui/Waveform";
 import { Icons } from "@/components/icons";
 import { Logo } from "@/components/layout/Logo";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
-import { useLocalMediaPreview } from "@/hooks/useLocalMediaPreview";
 
 import { cameraStreamRef } from "@/lib/cameraStream";
 import {
@@ -240,6 +239,26 @@ function CallPageInner() {
   const router = useRouter();
   const store = useSimulationStore();
 
+  if (!store.persona || !store.scenario || !store.rubric) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "#06080F", display: "grid", placeItems: "center", padding: 28 }}>
+        <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+          <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
+            <Icons.warn size={24} />
+          </div>
+          <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>Call session data is missing</h1>
+          <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+            The live simulation page now requires a real generated persona, scenario, and rubric. Start again from preview instead of falling back to demo content.
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+            <Link href="/simulation/preview"><button className="rc-btn ghost">Back to preview</button></Link>
+            <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Generate simulation</button></Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
@@ -256,69 +275,15 @@ function CallPageInner() {
   const [isWaitingReply, setIsWaitingReply] = useState(false);
   const [draftReply, setDraftReply] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [hasVideoStream, setHasVideoStream] = useState(false);
 
-  const persona = store.persona || {
-    id: "persona-margaret-001",
-    name: "Margaret Lewis",
-    age: 72,
-    role: "Post-discharge patient",
-    mood: "worried",
-    traits: ["polite", "hesitant", "apologetic"],
-    goal: "Understand new medication instructions",
-    hidden_red_flag: "Chest tightness — reveals only if asked about symptoms or after ~2 min",
-    behavior: "Apologetic, asks to repeat, easily distracted",
-    voice_style: "Elderly, calm, slightly anxious — light tremor",
-    opening_line: "Hi, I'm sorry to bother you. I was discharged yesterday and I'm confused about which pills I should take tonight.",
-    avatar_preset: "margaret",
-    sample_lines: [],
-  };
+  const persona = store.persona;
 
   const mode = store.mode || "video";
-  const industry = store.industry || "Healthcare";
-  const difficulty = store.difficulty || "Medium";
   const isVideoMode = mode === "video";
   const isVoiceMode = mode === "voice";
   const isPhoneMode = mode === "phone";
   const isTextMode = mode === "text";
-
-  // Whether to use ElevenLabs conversational AI (requires agentId from create-agent)
-  const useElevenLabs = Boolean(store.agentId);
-
-  // ElevenLabs conversational AI hook (no-op when not connected)
-  const {
-    startSession,
-    status: voiceAgentStatus,
-    isSpeaking,
-    isListening: agentIsListening,
-    setMuted: setVoiceAgentMuted,
-  } = useConversation({
-    onMessage: ({
-      message,
-      source,
-    }: {
-      message: string;
-      source: string;
-    }) => {
-      const entry: TranscriptEntry = {
-        speaker: source === "ai" ? "patient" : "user",
-        timestamp: currentTimestamp(startTimeRef.current),
-        text: message,
-        is_critical: hasCriticalKeyword(message),
-      };
-      setVisibleTranscript((prev) => [...prev, entry]);
-      store.addTranscriptEntry(entry);
-      if (entry.is_critical) {
-        store.triggerCriticalMoment(message);
-      }
-    },
-    onError: (error: string) => {
-      console.error("ElevenLabs error:", error);
-    },
-  });
-
-  // Local camera/mic for non-ElevenLabs modes
-  const needsCallMedia = isVideoMode || isVoiceMode || isPhoneMode;
-  const localMedia = useLocalMediaPreview({ video: isVideoMode, audio: needsCallMedia });
 
   useVideoSignals(videoRef, sessionIdRef.current);
 
@@ -478,12 +443,8 @@ function CallPageInner() {
   stopListeningRef.current = stopListening;
 
   const handleToggleMute = useCallback(() => {
-    const nextMuted = !store.isMuted;
     store.toggleMute();
-    if (useElevenLabs && voiceAgentStatus === "connected") {
-      setVoiceAgentMuted(nextMuted);
-    }
-  }, [setVoiceAgentMuted, store, useElevenLabs, voiceAgentStatus]);
+  }, [store]);
 
   useEffect(() => {
     if (interimTranscript) {
@@ -495,7 +456,11 @@ function CallPageInner() {
     const stream = cameraStreamRef.get();
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
+      setHasVideoStream(true);
+      void videoRef.current.play().catch(() => {});
+      return;
     }
+    setHasVideoStream(false);
   }, []);
 
   useEffect(() => {
@@ -516,54 +481,15 @@ function CallPageInner() {
   }, [stopListening]);
 
   useEffect(() => {
-    if (useElevenLabs && voiceAgentStatus === "connected") {
-      setVoiceAgentMuted(store.isMuted);
-    }
-  }, [setVoiceAgentMuted, store.isMuted, useElevenLabs, voiceAgentStatus]);
-
-  useEffect(() => {
-    if (useElevenLabs && isSpeaking) {
-      setPersonaTalking(true);
-    } else if (useElevenLabs && !isSpeaking && !isPlayingVoice) {
-      setPersonaTalking(false);
-    }
-  }, [isPlayingVoice, isSpeaking, useElevenLabs]);
-
-  useEffect(() => {
     if (sessionStartedRef.current) return;
-    if (needsCallMedia && localMedia.status === "loading") return;
 
     sessionStartedRef.current = true;
     startTimeRef.current = Date.now();
     store.setSimulationId(sessionIdRef.current);
     store.startCall();
 
-    if (useElevenLabs && store.agentId) {
-      void (async () => {
-        try {
-          const { signed_url } = await api.getSignedUrl(store.agentId!);
-          startSession({ signedUrl: signed_url, connectionType: "websocket" } as Parameters<typeof startSession>[0]);
-        } catch (error) {
-          setErrorMessage(
-            error instanceof Error
-              ? `${error.message} — using text fallback.`
-              : "Voice agent unavailable — using text fallback.",
-          );
-          void requestPersonaReply("", 0);
-        }
-      })();
-      return;
-    }
-
     void requestPersonaReply("", 0);
-  }, [
-    localMedia.status,
-    needsCallMedia,
-    requestPersonaReply,
-    startSession,
-    store,
-    useElevenLabs,
-  ]);
+  }, [requestPersonaReply, store]);
 
   const handleSend = useCallback(async () => {
     await submitUserTurn(draftReply);
@@ -606,27 +532,9 @@ function CallPageInner() {
           <Logo size={20} />
           <span style={{ fontSize: 14, fontWeight: 500 }}>{persona.name}</span>
           <span style={{ fontSize: 13, color: "var(--ink-3)" }}>{primaryModeLabel}</span>
-          {useElevenLabs && (
-            <span
-              style={{
-                fontSize: 11,
-                color:
-                  voiceAgentStatus === "connected"
-                    ? "#6EE7B7"
-                    : voiceAgentStatus === "error"
-                      ? "#FCA5A5"
-                      : "var(--ink-3)",
-              }}
-            >
-              {voiceAgentStatus === "connected"
-                ? "Live voice agent"
-                : voiceAgentStatus === "connecting"
-                  ? "Connecting agent…"
-                  : voiceAgentStatus === "error"
-                    ? "Agent error"
-                    : "Voice agent"}
-            </span>
-          )}
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+            Backend simulation agent · ElevenLabs TTS
+          </span>
         </div>
         <span style={{ fontSize: 14, color: "var(--ink-2)" }} className="rc-mono">{formatTime(elapsed)}</span>
       </div>
@@ -718,73 +626,47 @@ function CallPageInner() {
                 <div style={{ position: "absolute", bottom: 14, right: 14, width: 200, height: 140, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-2)", background: "linear-gradient(160deg, #1A2540 0%, #0E1A2C 100%)", boxShadow: "0 12px 30px -8px rgba(0,0,0,0.5)" }}>
                   <video ref={videoRef} autoPlay muted playsInline style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: store.isCameraOff ? 0.2 : 1 }} />
                   <div style={{ position: "absolute", top: 8, left: 8, fontSize: 10, padding: "2px 7px", background: "rgba(0,0,0,0.55)", borderRadius: 6 }}>You</div>
+                  {!hasVideoStream && (
+                    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 12, fontSize: 11, color: "var(--ink-2)", textAlign: "center", background: "rgba(8,10,17,0.6)" }}>
+                      Camera preview unavailable. Return to setup and re-enable camera if you want video signals.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
           <div style={{ padding: "14px 22px 0" }}>
-            {useElevenLabs && voiceAgentStatus === "connected" ? (
-              <div
-                style={{
-                  padding: "14px 16px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(45,212,191,0.25)",
-                  background: "rgba(45,212,191,0.08)",
-                  fontSize: 13,
-                  color: "var(--ink-1)",
-                  lineHeight: 1.5,
-                }}
-              >
-                <p style={{ margin: 0 }}>
-                  Speak naturally — {persona.name} is listening through the live voice agent.
-                  {agentIsListening && !store.isMuted && (
-                    <span style={{ color: "#5EEAD4", marginLeft: 8 }}>● Mic active</span>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "rgba(0,0,0,0.32)", border: "1px solid var(--line)", borderRadius: 16, padding: 12 }}>
+              <div style={{ flex: 1 }}>
+                <textarea
+                  value={draftReply}
+                  onChange={(e) => setDraftReply(e.target.value)}
+                  disabled={isListening}
+                  placeholder={composerHint}
+                  style={{ width: "100%", minHeight: 64, resize: "none", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: 14, color: "var(--ink-0)", padding: "12px 14px", fontSize: 13, outline: "none", opacity: isListening ? 0.85 : 1 }}
+                />
+                <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
+                  {!isTextMode && (
+                    <span style={{ color: isListening ? "#5EEAD4" : "var(--ink-3)" }}>
+                      {isListening ? "Mic live: browser speech recognition is capturing your turn." : "Voice modes can use typed input or browser dictation."}
+                    </span>
                   )}
-                  {store.isMuted && (
-                    <span style={{ color: "#FCD34D", marginLeft: 8 }}>● Muted</span>
+                  {!isTextMode && !speechSupported && (
+                    <span>Voice dictation is not available here. Type your message instead.</span>
                   )}
-                </p>
-                <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--ink-3)" }}>
-                  Press End call when you are ready for your coaching report.
-                </p>
-              </div>
-            ) : useElevenLabs && voiceAgentStatus === "connecting" ? (
-              <div style={{ padding: "14px 16px", borderRadius: 14, border: "1px solid var(--line)", fontSize: 13, color: "var(--ink-2)" }}>
-                Connecting voice agent…
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "rgba(0,0,0,0.32)", border: "1px solid var(--line)", borderRadius: 16, padding: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <textarea
-                    value={draftReply}
-                    onChange={(e) => setDraftReply(e.target.value)}
-                    disabled={isListening}
-                    placeholder={composerHint}
-                    style={{ width: "100%", minHeight: 64, resize: "none", background: "rgba(255,255,255,0.04)", border: "1px solid var(--line)", borderRadius: 14, color: "var(--ink-0)", padding: "12px 14px", fontSize: 13, outline: "none", opacity: isListening ? 0.85 : 1 }}
-                  />
-                  <div style={{ display: "flex", gap: 10, marginTop: 8, fontSize: 11, color: "var(--ink-3)" }}>
-                    {!isTextMode && (
-                      <span style={{ color: isListening ? "#5EEAD4" : "var(--ink-3)" }}>
-                        {isListening ? "Mic live: browser speech recognition is capturing your turn." : "Voice modes can use typed input or browser dictation."}
-                      </span>
-                    )}
-                    {!isTextMode && !speechSupported && (
-                      <span>Voice dictation is not available here. Type your message instead.</span>
-                    )}
-                    {!isTextMode && speechError && <span style={{ color: "#FCA5A5" }}>{speechError}</span>}
-                  </div>
+                  {!isTextMode && speechError && <span style={{ color: "#FCA5A5" }}>{speechError}</span>}
                 </div>
-                {!isTextMode && (
-                  <button className="rc-btn" disabled={!speechSupported || isWaitingReply} onClick={isListening ? stopListening : startListening}>
-                    {isListening ? <><Icons.pause size={14} /> Stop mic</> : <><Icons.mic size={14} /> Start mic</>}
-                  </button>
-                )}
-                <button className="rc-btn primary" disabled={isWaitingReply || !draftReply.trim()} onClick={handleSend}>
-                  {isWaitingReply ? <><span style={{ width: 12, height: 12, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Waiting</> : <><Icons.chat size={14} /> Send</>}
-                </button>
               </div>
-            )}
+              {!isTextMode && (
+                <button className="rc-btn" disabled={!speechSupported || isWaitingReply} onClick={isListening ? stopListening : startListening}>
+                  {isListening ? <><Icons.pause size={14} /> Stop mic</> : <><Icons.mic size={14} /> Start mic</>}
+                </button>
+              )}
+              <button className="rc-btn primary" disabled={isWaitingReply || !draftReply.trim()} onClick={handleSend}>
+                {isWaitingReply ? <><span style={{ width: 12, height: 12, borderRadius: 99, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "rc-spin 1s linear infinite" }} /> Waiting</> : <><Icons.chat size={14} /> Send</>}
+              </button>
+            </div>
             {errorMessage && <div style={{ marginTop: 10, fontSize: 12, color: "#FCA5A5" }}>{errorMessage}</div>}
           </div>
 
@@ -792,9 +674,9 @@ function CallPageInner() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "rgba(0,0,0,0.6)", border: "1px solid var(--line-2)", borderRadius: 18, backdropFilter: "blur(20px)", boxShadow: "0 14px 40px -10px rgba(0,0,0,0.7)" }}>
               <CtrlBtn
                 icon={store.isMuted ? <Icons.micOff size={18} /> : <Icons.mic size={18} />}
-                label={store.isMuted ? "Unmute" : useElevenLabs && voiceAgentStatus === "connected" && agentIsListening ? "Mic live" : "Mute"}
+                label={store.isMuted ? "Unmute" : isListening ? "Mic live" : "Mute"}
                 onClick={handleToggleMute}
-                tone={store.isMuted ? "amber" : useElevenLabs && voiceAgentStatus === "connected" && agentIsListening && !store.isMuted ? "teal" : undefined}
+                tone={store.isMuted ? "amber" : isListening && !store.isMuted ? "teal" : undefined}
               />
               {isVideoMode && <CtrlBtn icon={store.isCameraOff ? <Icons.camOff size={18} /> : <Icons.cam size={18} />} label={store.isCameraOff ? "Camera off" : "Camera"} onClick={store.toggleCamera} />}
               <CtrlBtn icon={<Icons.hint size={18} />} label="Hint" tone="violet" onClick={handleUseSuggestedResponse} disabled={!liveCoaching?.suggested_response} />
@@ -861,12 +743,40 @@ function CallPageInner() {
             )}
 
             {activeTab === 2 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, overflow: "auto" }}>
+                {store.rubric.items.map((item) => (
+                  <div key={item.name} style={{ padding: "11px 12px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                      <span style={{ color: item.is_hot ? "#FCA5A5" : "var(--ink-1)", fontWeight: 600, fontSize: 12.5 }}>{item.name}</span>
+                      <span style={{ color: "var(--ink-3)", fontSize: 11 }} className="rc-mono">{item.weight}%</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>{item.description}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 3 && (
               <LiveSignalsPanel
                 video={store.liveSignals}
                 audio={store.liveAudioSignals}
                 showVideo={isVideoMode && store.consentVideoSignals}
                 showAudio={store.consentAudioSignals}
               />
+            )}
+
+            {activeTab === 4 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, overflow: "auto" }}>
+                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 13, lineHeight: 1.5 }}>
+                  <strong style={{ color: "#B5ACFD" }}>Next best action:</strong> {liveCoaching?.next_best_action || "Wait for more conversation data before suggesting the next move."}
+                </div>
+                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(139,125,251,0.10)", border: "1px solid rgba(139,125,251,0.35)", fontSize: 13, lineHeight: 1.5, fontStyle: "italic" }}>
+                  {liveCoaching?.suggested_response || "Suggested phrasing will appear here when the coaching agent detects a stronger response option."}
+                </div>
+                <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid var(--line)", fontSize: 12.5, lineHeight: 1.55 }}>
+                  Current phase: <span style={{ color: "#5EEAD4" }}>{liveCoaching?.phase || "opening"}</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -876,9 +786,5 @@ function CallPageInner() {
 }
 
 export default function CallPage() {
-  return (
-    <ConversationProvider>
-      <CallPageInner />
-    </ConversationProvider>
-  );
+  return <CallPageInner />;
 }

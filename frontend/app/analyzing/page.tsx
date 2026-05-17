@@ -18,6 +18,10 @@ export default function AnalyzingPage() {
     const sessionId = s.simulationId || `session-${Date.now()}`;
 
     async function run() {
+      if (!s.persona?.id || !s.scenario?.id || !s.rubric?.id) {
+        throw new Error("Missing generated simulation data.");
+      }
+
       let transcript = s.transcript.map((entry) => ({
         speaker: entry.speaker,
         text: entry.text,
@@ -62,9 +66,9 @@ export default function AnalyzingPage() {
 
       return api.generateEvaluation({
         session_id: sessionId,
-        persona_id: s.persona?.id ?? "persona-margaret-001",
-        scenario_id: s.scenario?.id ?? "scenario-postdischarge-001",
-        rubric_id: s.rubric?.id ?? "rubric-healthcare-001",
+        persona_id: s.persona.id,
+        scenario_id: s.scenario.id,
+        rubric_id: s.rubric.id,
         mode: s.mode ?? "video",
         transcript,
       });

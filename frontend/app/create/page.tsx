@@ -82,6 +82,9 @@ export default function CreatePage() {
         behavior_toggles: toggles,
       });
       store.setPersona(persona);
+      store.setAgentLog([
+        { agent: "Persona Generator", color: "#5EEAD4", message: `Generated ${persona.name}, ${persona.age}, ${persona.role}. Mood: ${persona.mood}.` },
+      ]);
 
       setAgentStatus("scenario");
       const scenario = await api.generateScenario({
@@ -93,6 +96,10 @@ export default function CreatePage() {
         behavior_toggles: toggles,
       });
       store.setScenario(scenario);
+      store.setAgentLog([
+        { agent: "Persona Generator", color: "#5EEAD4", message: `Generated ${persona.name}, ${persona.age}, ${persona.role}. Mood: ${persona.mood}.` },
+        { agent: "Scenario Builder", color: "#93B4FF", message: `${scenario.title} · ${scenario.objective}` },
+      ]);
 
       setAgentStatus("rubric");
       const rubric = await api.generateRubric({
@@ -103,6 +110,11 @@ export default function CreatePage() {
         evaluation_focus: evalFocus,
       });
       store.setRubric(rubric);
+      store.setAgentLog([
+        { agent: "Persona Generator", color: "#5EEAD4", message: `Generated ${persona.name}, ${persona.age}, ${persona.role}. Mood: ${persona.mood}.` },
+        { agent: "Scenario Builder", color: "#93B4FF", message: `${scenario.title} · ${scenario.objective}` },
+        { agent: "Rubric Agent", color: "#B5ACFD", message: `Built ${rubric.items.length} criteria from focus: ${evalFocus.join(", ")}.` },
+      ]);
       store.setSimulationId(`session-${Date.now()}`);
 
       setAgentStatus("done");

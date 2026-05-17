@@ -65,7 +65,6 @@ export default function SetupPage() {
 
   const handleJoin = () => {
     joiningRef.current = true;
-    store.startCall();
     router.push("/simulation/call");
   };
 
