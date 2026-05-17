@@ -23,6 +23,7 @@ class TranscriptEntry(BaseModel):
 
 
 class LiveCoaching(BaseModel):
+    phase: str = "opening"
     summary: str
     next_best_action: str
     suggested_response: str
@@ -37,6 +38,7 @@ class LiveCoaching(BaseModel):
 class SimulationTurn(BaseModel):
     session_id: str
     turn_index: int
+    phase: str = "opening"
     entry: TranscriptEntry
     call_ended: bool = False
     audio_signals: AudioSignals

@@ -9,6 +9,10 @@ except ImportError:
     _CV2_AVAILABLE = False
 
 
+def cv2_available() -> bool:
+    return _CV2_AVAILABLE
+
+
 def decode_b64_frame(b64: str) -> np.ndarray:
     """Decode a base64-encoded JPEG frame to a numpy array (H, W, C) in BGR."""
     try:

@@ -7,57 +7,6 @@ import { Icons } from "@/components/icons";
 import { PersonaAvatar } from "@/components/persona/PersonaAvatar";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { useSimulationStore } from "@/stores/simulationStore";
-import { PRIVACY_NOTICE } from "@/lib/constants";
-import type { EvaluationReport } from "@/lib/apiClient";
-
-// Minimal fallback so the page renders in demo/direct-nav with no report in store
-const MOCK_REPORT: EvaluationReport = {
-  session_id: "demo",
-  overall_score: 78,
-  persona_name: "Margaret Lewis",
-  duration: "5:42",
-  mode: "video",
-  industry: "Healthcare",
-  difficulty: "Medium",
-  skill_scores: { "Empathy": 86, "Clarity": 80, "Active listening": 74, "Safety / escalation": 58, "Professionalism": 84, "Turn-taking": 76, "Video presence": 71, "Pace control": 68 },
-  key_moments: [
-    { timestamp: "00:42", position_pct: 0.07, type: "strong", title: "Strong empathy opening", excerpt: "I can hear this has been a worrying time." },
-    { timestamp: "01:18", position_pct: 0.22, type: "improve", title: "Missed clarifying question", excerpt: "Got it, let me know which pill..." },
-    { timestamp: "02:05", position_pct: 0.36, type: "risk", title: "Dizziness mention missed", excerpt: "I've been a little dizzy..." },
-    { timestamp: "02:41", position_pct: 0.47, type: "risk", title: "Escalation opportunity missed", excerpt: "…and I felt this tightness in my chest…", score_impact: -12, why_it_mattered: "Chest tightness after surgery is a red flag for cardiac or pulmonary complications.", better_response: "Because you mentioned chest tightness after surgery, I need to connect you with urgent clinical support right away." },
-    { timestamp: "03:20", position_pct: 0.58, type: "question", title: "Good clarifying question", excerpt: "Can you tell me where the tightness was?" },
-    { timestamp: "04:30", position_pct: 0.80, type: "strong", title: "Clear next steps", excerpt: "I'm going to connect you with our clinical team." },
-  ],
-  annotated_transcript: [
-    { speaker: "You", timestamp: "00:42", text: "I can hear this has been a worrying time. Let me help you through this step by step.", tag: "strong", tag_label: "Strong empathy" },
-    { speaker: "Margaret Lewis", timestamp: "01:05", text: "I just got home yesterday and they gave me so many bottles…" },
-    { speaker: "You", timestamp: "01:18", text: "Got it, let me know which pill you're asking about.", tag: "improve", tag_label: "Missed clarifying question — was she dizzy?" },
-    { speaker: "Margaret Lewis", timestamp: "02:05", text: "I've been a little dizzy, but I think it's just from the surgery." },
-    { speaker: "Margaret Lewis", timestamp: "02:41", text: "…and I felt this tightness in my chest, but I wasn't sure if it was from the surgery.", tag: "risk", tag_label: "Critical red flag mentioned" },
-    { speaker: "You", timestamp: "02:45", text: "Okay, and were you taking the white pill in the morning or evening?", tag: "risk", tag_label: "Missed escalation — continued with medication question" },
-    { speaker: "You", timestamp: "03:20", text: "Can you tell me where the tightness was and when it started?", tag: "question", tag_label: "Good clarifying question (slightly late)" },
-  ],
-  multimodal_insights: [
-    { label: "Eye-contact estimate", value: "62%", note: "steady", tone: "warn" },
-    { label: "Speaking pace", value: "164 wpm", note: "slightly fast", tone: "warn" },
-    { label: "Filler words", value: "12", note: "um, like, you know", tone: "warn" },
-    { label: "Interruptions (turn)", value: "3", tone: "warn" },
-    { label: "Avg response latency", value: "18s", tone: "ok" },
-    { label: "Longest pause", value: "4.2s", tone: "ok" },
-  ],
-  coach_feedback: {
-    did_well: "Strong empathy, calm tone throughout, and a respectful pace that suited an older patient. Your opening line set a warm anchor.",
-    missed: "When Margaret mentioned chest tightness at 02:41, you continued with medication questions for 39 seconds instead of escalating immediately.",
-    try_next: "3-minute red-flag escalation drill · A harder variant where Margaret reveals symptoms earlier and tries to deflect.",
-    next_drill_title: "Red-flag escalation drill (Hard)",
-  },
-  next_practice: [
-    { persona: "margaret", name: "Red-flag escalation drill", difficulty: "Hard", description: "Margaret reveals symptoms earlier and deflects.", why: "Lowest score: escalation 58" },
-    { persona: "aanya", name: "Refund · interrupting customer", difficulty: "Hard", description: "Customer talks over you constantly.", why: "Turn-taking has plateaued" },
-    { persona: "james", name: "Behavioral · STAR specificity", difficulty: "Medium", description: "Recruiter pushes for concrete examples.", why: "Strongest growth area" },
-  ],
-  privacy_notice: PRIVACY_NOTICE,
-};
 
 const TAG_STYLES: Record<string, { bg: string; border: string; label: string }> = {
   strong: { bg: "rgba(52,211,153,0.10)", border: "rgba(52,211,153,0.45)", label: "#6EE7B7" },
@@ -90,6 +39,36 @@ function ScoreTile({ l, v, hot }: { l: string; v: number; hot?: boolean }) {
       <div style={{ height: 3, marginTop: 5, background: "rgba(255,255,255,0.06)", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${v}%`, background: c, opacity: 0.8 }} />
       </div>
+    </div>
+  );
+}
+
+function ModalityTile({
+  modality,
+  weight,
+  used,
+  confidence,
+  note,
+}: {
+  modality: string;
+  weight: number;
+  used: boolean;
+  confidence?: number;
+  note?: string;
+}) {
+  const tone = !used ? "#94A3B8" : modality === "Video" ? "#93B4FF" : modality === "Audio" ? "#5EEAD4" : "#FCD34D";
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 10, background: used ? "rgba(255,255,255,0.03)" : "rgba(148,163,184,0.06)", border: used ? "1px solid var(--line)" : "1px solid rgba(148,163,184,0.2)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontSize: 11, color: "var(--ink-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>{modality}</div>
+        <div className={`rc-pill ${used ? "ok" : ""}`} style={!used ? { opacity: 0.7 } : undefined}>{used ? "Used in scoring" : "Not applied"}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: tone }}>{weight}%</span>
+        <span style={{ fontSize: 11, color: "var(--ink-3)" }}>rubric weight</span>
+      </div>
+      {typeof confidence === "number" && <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 4 }}>Confidence: {confidence}%</div>}
+      {note && <div style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.45, marginTop: 4 }}>{note}</div>}
     </div>
   );
 }
@@ -145,7 +124,29 @@ function RadarChart({ scores }: { scores: Record<string, number> }) {
 
 export default function ReportPage() {
   const storeReport = useSimulationStore((s) => s.report);
-  const r = storeReport ?? MOCK_REPORT;
+  if (!storeReport) {
+    return (
+      <AppShell>
+        <TopNav active="Reports" compact />
+        <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 28 }}>
+          <div className="rc-glass" style={{ width: 560, maxWidth: "100%", padding: 28, textAlign: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 99, background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}>
+              <Icons.warn size={24} />
+            </div>
+            <h1 className="rc-h-2" style={{ margin: "0 0 10px" }}>No evaluation report available</h1>
+            <div style={{ fontSize: 14, color: "var(--ink-2)", lineHeight: 1.55, marginBottom: 20 }}>
+              This page now expects a real evaluation generated from a completed simulation session. Run a practice session first, then return here from the analyzing flow.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+              <Link href="/dashboard"><button className="rc-btn ghost">Back to dashboard</button></Link>
+              <Link href="/create"><button className="rc-btn primary"><Icons.sparkle size={13} />Start a simulation</button></Link>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+  const r = storeReport;
   const [selectedMoment, setSelectedMoment] = useState(() =>
     r.key_moments.findIndex((m) => m.score_impact != null && m.score_impact < 0)
   );
@@ -299,6 +300,18 @@ export default function ReportPage() {
                 <div className="rc-label">Multimodal insights</div>
                 <div style={{ display: "flex", gap: 6 }}><div className="rc-pill"><Icons.video size={10} />Video</div><div className="rc-pill"><Icons.mic size={10} />Audio</div></div>
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                {r.modality_contributions.map((item) => (
+                  <ModalityTile
+                    key={item.modality}
+                    modality={item.modality}
+                    weight={item.weight_pct}
+                    used={item.used_in_scoring}
+                    confidence={item.confidence_pct}
+                    note={item.note}
+                  />
+                ))}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 {r.multimodal_insights.map((x) => (
                   <div key={x.label} style={{ padding: "8px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--line)" }}>
@@ -309,6 +322,9 @@ export default function ReportPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+              <div style={{ padding: "8px 11px", borderRadius: 8, fontSize: 11, lineHeight: 1.5, background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", color: "var(--ink-2)", marginBottom: 10 }}>
+                This report now separates signals that were only observed from signals that were actually used in scoring. Video-only criteria should apply only in video mode when frame evidence is available.
               </div>
               <div style={{ padding: "8px 11px", borderRadius: 8, fontSize: 11, lineHeight: 1.5, background: "rgba(79,124,255,0.06)", border: "1px solid rgba(79,124,255,0.25)", color: "var(--ink-2)" }}>
                 {r.privacy_notice}

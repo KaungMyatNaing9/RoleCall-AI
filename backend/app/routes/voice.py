@@ -12,5 +12,7 @@ async def synthesize_voice(req: VoiceSynthesisRequest):
         text=req.text,
         voice_style=req.voice_style,
         voice_id=req.voice_id,
+        persona_id=req.persona_id,
+        persona_name=req.persona_name,
     )
     return Response(content=audio, media_type="audio/mpeg")

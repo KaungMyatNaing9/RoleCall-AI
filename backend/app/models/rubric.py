@@ -1,10 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RubricGenerateRequest(BaseModel):
     scenario_id: str
     industry: str = "Healthcare"
-    evaluation_focus: list[str] = []
+    difficulty: str = "Medium"
+    mode: str = "adaptive"
+    evaluation_focus: list[str] = Field(default_factory=list)
 
 
 class RubricItem(BaseModel):

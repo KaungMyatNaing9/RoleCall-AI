@@ -1,5 +1,4 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
 
 
 class ScenarioGenerateRequest(BaseModel):
@@ -7,6 +6,8 @@ class ScenarioGenerateRequest(BaseModel):
     industry: str = "Healthcare"
     difficulty: str = "Medium"
     mode: str = "video"
+    behavior_sliders: dict[str, float] = Field(default_factory=dict)
+    behavior_toggles: dict[str, bool] = Field(default_factory=dict)
 
 
 class ScenarioResponse(BaseModel):

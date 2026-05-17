@@ -15,6 +15,8 @@ class VideoSignals(BaseModel):
     speaking_pace_wpm: int = 164
     interruption_count: int = 3
     filler_word_count: int = 12
+    analysis_source: str = "video_heuristic_fallback"
+    confidence: float = 0.25
     privacy_notice: str = PRIVACY_NOTICE
 
 
@@ -39,9 +41,20 @@ class AudioSignals(BaseModel):
     interruption_count: int = 3
     avg_response_time_s: float = 18.0
     total_speaking_time_s: float = 204.0
+    analysis_source: str = "audio_signal_service"
+    confidence: float = 0.25
 
 
 class SessionSummaryRequest(BaseModel):
     session_id: str
     duration_s: float = 342.0
     transcript: str = ""  # user speech text for filler-word and pace computation
+
+
+class VideoRuntimeStatus(BaseModel):
+    cv2_available: bool
+    mediapipe_available: bool
+    model_asset_present: bool
+    live_pipeline_ready: bool
+    mode: str
+    detail: str = ""

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from app.models.signals import VideoSignals, AudioSignals, PRIVACY_NOTICE
 
@@ -14,7 +14,7 @@ class EvaluationGenerateRequest(BaseModel):
     persona_id: str = "persona-margaret-001"
     scenario_id: str = "scenario-postdischarge-001"
     rubric_id: str = "rubric-healthcare-001"
-    transcript: list[TranscriptSyncEntry] = []
+    transcript: list[TranscriptSyncEntry] = Field(default_factory=list)
     mode: str = "video"
 
 
@@ -51,6 +51,14 @@ class MultimodalInsightItem(BaseModel):
     tone: str = "ok"  # "ok" | "warn" | "bad"
 
 
+class ModalityContribution(BaseModel):
+    modality: str
+    weight_pct: int
+    used_in_scoring: bool = True
+    confidence_pct: Optional[int] = None
+    note: Optional[str] = None
+
+
 class EvaluationReport(BaseModel):
     session_id: str
     overall_score: int
@@ -58,6 +66,7 @@ class EvaluationReport(BaseModel):
     key_moments: list[KeyMoment]
     annotated_transcript: list[AnnotatedTurn]
     multimodal_insights: list[MultimodalInsightItem]
+    modality_contributions: list[ModalityContribution] = Field(default_factory=list)
     coach_feedback: CoachFeedback
     next_practice: list[dict]
     privacy_notice: str = PRIVACY_NOTICE
